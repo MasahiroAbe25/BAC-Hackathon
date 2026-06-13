@@ -223,6 +223,7 @@ export default function TreeScreen({ diagnosis }: Props) {
           ) : (
             <KenChatPanel
               diagnosis={diagnosis}
+              treeNodes={treeNodes}
               onTopics={(topics) => handleTopics(topics, "ken_dialogue")}
             />
           )}
