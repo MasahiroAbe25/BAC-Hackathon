@@ -2,6 +2,7 @@ import { useCallback, useMemo, useRef, useState } from "react";
 import type { Diagnosis, TopicInput, TreeNode, Source } from "../types";
 import { topicToNode } from "../lib/branchMatch";
 import { computeLayout, type NodeSize } from "../lib/layout";
+import { loadTree, saveTree, clearTree } from "../lib/storage";
 
 export interface AddResult {
   node: TreeNode;
@@ -17,10 +18,20 @@ export function useMemoryTree(
   diagnosis: Diagnosis,
   getSizes?: () => LayoutSizes | undefined
 ) {
-  const [treeNodes, setTreeNodes] = useState<TreeNode[]>([]);
-  const [positions, setPositions] = useState<Map<string, { x: number; y: number }>>(new Map());
-  const fixedRef = useRef<Map<string, { x: number; y: number }>>(new Map());
-  const nodesRef = useRef<TreeNode[]>([]);
+  const [treeNodes, setTreeNodes] = useState<TreeNode[]>(
+    () => loadTree(diagnosis.id)?.treeNodes ?? []
+  );
+  const [positions, setPositions] = useState<Map<string, { x: number; y: number }>>(
+    () => loadTree(diagnosis.id)?.positions ?? new Map()
+  );
+  // useRef initial values are only used on the first render; subsequent renders ignore them.
+  // loadTree is a fast synchronous read, so multiple calls are acceptable.
+  const fixedRef = useRef<Map<string, { x: number; y: number }>>(
+    loadTree(diagnosis.id)?.positions ?? new Map()
+  );
+  const nodesRef = useRef<TreeNode[]>(
+    loadTree(diagnosis.id)?.treeNodes ?? []
+  );
 
   const branchIndexById = useMemo(() => {
     const map = new Map<string, number>();
@@ -47,6 +58,7 @@ export function useMemoryTree(
 
       setTreeNodes(next);
       setPositions(newPositions);
+      saveTree(diagnosis.id, next, newPositions);
 
       return added.map((node) => {
         const branch = diagnosis.branches.find((b) => b.id === node.parentBranchId);
@@ -56,5 +68,13 @@ export function useMemoryTree(
     [diagnosis, branchIndexById, getSizes]
   );
 
-  return { treeNodes, positions, addTopics };
+  const resetTree = useCallback(() => {
+    nodesRef.current = [];
+    fixedRef.current = new Map();
+    setTreeNodes([]);
+    setPositions(new Map());
+    clearTree(diagnosis.id);
+  }, [diagnosis.id]);
+
+  return { treeNodes, positions, addTopics, resetTree };
 }

@@ -14,6 +14,7 @@ import { CenterNode, BranchNode, LeafNode, FloatingNode } from "./nodes";
 import { StraightConnector } from "./edges";
 import MiningPanel from "./MiningPanel";
 import KenChatPanel from "./KenChatPanel";
+import { ExportButton, type ExportHandle } from "./ExportButton";
 
 const nodeTypes = {
   center: CenterNode,
@@ -33,10 +34,12 @@ interface Props {
 export default function TreeScreen({ diagnosis }: Props) {
   const sizesRef = useRef<LayoutSizes>({});
   const getSizes = useCallback((): LayoutSizes => sizesRef.current, []);
-  const { treeNodes, positions, addTopics } = useMemoryTree(diagnosis, getSizes);
+  const { treeNodes, positions, addTopics, resetTree } = useMemoryTree(diagnosis, getSizes);
   const [tab, setTab] = useState<"mining" | "ken">("mining");
   const [freshIds, setFreshIds] = useState<Set<string>>(new Set());
   const [toast, setToast] = useState<string | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
+  const exportRef = useRef<ExportHandle>(null);
 
   useEffect(() => {
     if (!toast) return;
@@ -102,6 +105,13 @@ export default function TreeScreen({ diagnosis }: Props) {
       window.removeEventListener("resize", measureNodes);
     };
   }, [measureNodes, treeNodes, diagnosis]);
+
+  const handleReset = () => {
+    if (!window.confirm("マインドマップをリセットしますか？この操作は元に戻せません。")) return;
+    resetTree();
+    setFreshIds(new Set());
+    setToast(null);
+  };
 
   const handleTopics = (topics: TopicInput[], source: Source) => {
     // サイズ計測が完了する前に送信された場合はスキップ。
@@ -202,6 +212,12 @@ export default function TreeScreen({ diagnosis }: Props) {
         >
           <Background color="#e3e1f2" gap={24} />
           <Controls showInteractive={false} />
+          <ExportButton
+            ref={exportRef}
+            nodeSizes={nodeSizes}
+            title={diagnosis.title}
+            onExportingChange={setIsExporting}
+          />
         </ReactFlow>
         {toast && <div className="toast">{toast}</div>}
       </div>
@@ -230,6 +246,18 @@ export default function TreeScreen({ diagnosis }: Props) {
               onTopics={(topics) => handleTopics(topics, "ken_dialogue")}
             />
           )}
+        </div>
+        <div className="side-actions">
+          <button className="ghost-button" onClick={handleReset}>
+            やり直す
+          </button>
+          <button
+            className="primary-button side-export-button"
+            onClick={() => exportRef.current?.exportImage()}
+            disabled={isExporting}
+          >
+            {isExporting ? "書き出し中…" : "📷 画像を保存"}
+          </button>
         </div>
       </aside>
     </div>
