@@ -29,4 +29,12 @@ export interface Diagnosis {
 export interface TopicInput {
   label: string;
   tags: string[];
+  /** ドメイン辞書由来のメタ情報(任意)。重み付け・カテゴリ分類のヒントに使う。 */
+  domainTerms?: DomainTermHit[];
+}
+
+export interface DomainTermHit {
+  term: string;
+  category?: string;
+  weight: number;
 }
