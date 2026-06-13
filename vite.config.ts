@@ -1,5 +1,7 @@
-import { readFileSync } from "node:fs";
-import { defineConfig, type Plugin } from "vite";
+import { existsSync, readFileSync, statSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, join, normalize } from "node:path";
+import { defineConfig, type Connect, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
@@ -90,6 +92,53 @@ function kenApiPlugin(): Plugin {
   };
 }
 
+/**
+ * kuromojiの辞書ファイル(*.dat.gz)を「素のgzipバイナリ」として返すプラグイン。
+ *
+ * Viteのdev静的サーバー(sirv)は拡張子`.gz`を見ると`Content-Encoding: gzip`を
+ * 付けて返すことがある。するとブラウザが自動でgunzipし、kuromoji側のXHRには
+ * 展開済みバイトが渡る → kuromojiがさらにgunzipしようとして
+ * `invalid file signature` で失敗する。
+ *
+ * ここでは`/kuromoji/dict/*.dat.gz`へのリクエストを横取りし、
+ * Content-Encodingを付けずに`application/octet-stream`としてそのまま返すことで
+ * この二重展開を防ぐ。
+ */
+function kuromojiDictPlugin(): Plugin {
+  const publicDir = join(dirname(fileURLToPath(import.meta.url)), "public");
+  const serveRaw: Connect.NextHandleFunction = (req, res, next) => {
+    const url = (req.url || "").split("?")[0];
+    if (!url.startsWith("/kuromoji/dict/") || !url.endsWith(".dat.gz")) {
+      next();
+      return;
+    }
+    const filePath = normalize(join(publicDir, decodeURIComponent(url)));
+    // ディレクトリトラバーサル防止
+    if (!filePath.startsWith(join(publicDir, "kuromoji", "dict")) || !existsSync(filePath)) {
+      next();
+      return;
+    }
+    const data = readFileSync(filePath);
+    res.statusCode = 200;
+    res.setHeader("Content-Type", "application/octet-stream");
+    res.setHeader("Content-Length", String(statSync(filePath).size));
+    // ブラウザに勝手にgunzipさせないため Content-Encoding は付けない
+    res.removeHeader?.("Content-Encoding");
+    res.setHeader("Cache-Control", "no-transform");
+    res.end(data);
+  };
+  return {
+    name: "kuromoji-dict-raw",
+    configureServer(server) {
+      // 他の静的ミドルウェアより前に処理する
+      server.middlewares.use(serveRaw);
+    },
+    configurePreviewServer(server) {
+      server.middlewares.use(serveRaw);
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [react(), kenApiPlugin()],
+  plugins: [kuromojiDictPlugin(), react(), kenApiPlugin()],
 });

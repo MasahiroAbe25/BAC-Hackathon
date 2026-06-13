@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   ReactFlow,
   Background,
@@ -8,9 +8,10 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import type { Diagnosis, TopicInput, Source } from "../types";
-import { branchPosition } from "../lib/layout";
-import { useMemoryTree, type AddResult } from "../hooks/useMemoryTree";
+import { branchPosition, type NodeSize } from "../lib/layout";
+import { useMemoryTree, type AddResult, type LayoutSizes } from "../hooks/useMemoryTree";
 import { CenterNode, BranchNode, LeafNode, FloatingNode } from "./nodes";
+import { StraightConnector } from "./edges";
 import MiningPanel from "./MiningPanel";
 import KenChatPanel from "./KenChatPanel";
 
@@ -21,12 +22,18 @@ const nodeTypes = {
   floating: FloatingNode,
 };
 
+const edgeTypes = {
+  connector: StraightConnector,
+};
+
 interface Props {
   diagnosis: Diagnosis;
 }
 
 export default function TreeScreen({ diagnosis }: Props) {
-  const { treeNodes, positions, addTopics } = useMemoryTree(diagnosis);
+  const sizesRef = useRef<LayoutSizes>({});
+  const getSizes = useCallback((): LayoutSizes => sizesRef.current, []);
+  const { treeNodes, positions, addTopics } = useMemoryTree(diagnosis, getSizes);
   const [tab, setTab] = useState<"mining" | "ken">("mining");
   const [freshIds, setFreshIds] = useState<Set<string>>(new Set());
   const [toast, setToast] = useState<string | null>(null);
@@ -43,12 +50,76 @@ export default function TreeScreen({ diagnosis }: Props) {
     return () => clearTimeout(timer);
   }, [freshIds]);
 
+  const canvasRef = useRef<HTMLDivElement>(null);
+  const [nodeSizes, setNodeSizes] = useState<Map<string, NodeSize>>(new Map());
+
+  // Measure the rendered react-flow node boxes so connector radii can be
+  // computed from real sizes (keeps the visible edge-to-edge gap constant).
+  const measureNodes = useCallback(() => {
+    const root = canvasRef.current;
+    if (!root) return;
+    const els = root.querySelectorAll<HTMLElement>(".react-flow__node[data-id]");
+    const next = new Map<string, NodeSize>();
+    els.forEach((el) => {
+      const id = el.getAttribute("data-id");
+      if (!id) return;
+      // offsetWidth/Height are layout pixels, unaffected by the viewport's
+      // CSS zoom transform, so they match react-flow coordinate units.
+      const width = el.offsetWidth;
+      const height = el.offsetHeight;
+      if (width > 0 && height > 0) {
+        next.set(id, { width, height });
+      }
+    });
+    setNodeSizes((prev) => {
+      if (prev.size === next.size) {
+        let same = true;
+        for (const [id, size] of next) {
+          const old = prev.get(id);
+          if (!old || Math.abs(old.width - size.width) > 0.5 || Math.abs(old.height - size.height) > 0.5) {
+            same = false;
+            break;
+          }
+        }
+        if (same) return prev;
+      }
+      return next;
+    });
+  }, []);
+
+  // Re-measure whenever the set of nodes changes (initial render + new leaves)
+  // and on window resize. A short rAF chain lets fonts/layout settle first.
+  useLayoutEffect(() => {
+    let frame1 = 0;
+    let frame2 = 0;
+    frame1 = requestAnimationFrame(() => {
+      frame2 = requestAnimationFrame(measureNodes);
+    });
+    window.addEventListener("resize", measureNodes);
+    return () => {
+      cancelAnimationFrame(frame1);
+      cancelAnimationFrame(frame2);
+      window.removeEventListener("resize", measureNodes);
+    };
+  }, [measureNodes, treeNodes, diagnosis]);
+
   const handleTopics = (topics: TopicInput[], source: Source) => {
     const results = addTopics(topics, source);
     if (results.length === 0) return;
     setFreshIds(new Set(results.map((result) => result.node.id)));
     setToast(buildToast(results));
   };
+
+  const rootSize = nodeSizes.get("center");
+
+  useEffect(() => {
+    const branches = new Map<string, NodeSize>();
+    for (const branch of diagnosis.branches) {
+      const size = nodeSizes.get(branch.id);
+      if (size) branches.set(branch.id, size);
+    }
+    sizesRef.current = { root: rootSize, branches };
+  }, [diagnosis, nodeSizes, rootSize]);
 
   const flowNodes: Node[] = useMemo(() => {
     const list: Node[] = [
@@ -61,7 +132,7 @@ export default function TreeScreen({ diagnosis }: Props) {
         origin: [0.5, 0.5] as [number, number],
       },
       ...diagnosis.branches.map((branch, index) => {
-        const pos = branchPosition(branch.id, index);
+        const pos = branchPosition(branch.id, index, rootSize, nodeSizes.get(branch.id));
         return {
           id: branch.id,
           type: "branch",
@@ -88,11 +159,12 @@ export default function TreeScreen({ diagnosis }: Props) {
       }),
     ];
     return list;
-  }, [diagnosis, treeNodes, positions, freshIds]);
+  }, [diagnosis, treeNodes, positions, freshIds, nodeSizes, rootSize]);
 
   const flowEdges: Edge[] = useMemo(() => {
     const edges: Edge[] = diagnosis.branches.map((branch) => ({
       id: `center-${branch.id}`,
+      type: "connector",
       source: "center",
       target: branch.id,
       style: { stroke: "#5b4fe0", strokeWidth: 2.5 },
@@ -101,6 +173,7 @@ export default function TreeScreen({ diagnosis }: Props) {
       if (node.type === "leaf" && node.parentBranchId) {
         edges.push({
           id: `${node.parentBranchId}-${node.id}`,
+          type: "connector",
           source: node.parentBranchId,
           target: node.id,
           style: { stroke: "#c9c4f7", strokeWidth: 2 },
@@ -112,11 +185,12 @@ export default function TreeScreen({ diagnosis }: Props) {
 
   return (
     <div className="tree-screen">
-      <div className="tree-canvas">
+      <div className="tree-canvas" ref={canvasRef}>
         <ReactFlow
           nodes={flowNodes}
           edges={flowEdges}
           nodeTypes={nodeTypes}
+          edgeTypes={edgeTypes}
           fitView
           fitViewOptions={{ padding: 0.3 }}
           proOptions={{ hideAttribution: true }}
