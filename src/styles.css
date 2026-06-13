@@ -174,9 +174,35 @@ button {
   position: relative;
 }
 
+.panel-divider {
+  width: 5px;
+  flex-shrink: 0;
+  background: #ececf4;
+  cursor: col-resize;
+  transition: background 0.15s ease;
+  position: relative;
+}
+
+.panel-divider::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 3px;
+  height: 32px;
+  border-left: 1px solid #c5c2e8;
+  border-right: 1px solid #c5c2e8;
+  border-radius: 2px;
+}
+
+.panel-divider:hover {
+  background: var(--primary-light);
+}
+
 .side-panel {
-  width: 360px;
-  border-left: 1px solid #ececf4;
+  flex-shrink: 0;
+  border-left: none;
   background: #fff;
   display: flex;
   flex-direction: column;

@@ -41,6 +41,33 @@ export default function TreeScreen({ diagnosis }: Props) {
   const [isExporting, setIsExporting] = useState(false);
   const exportRef = useRef<ExportHandle>(null);
 
+  const MIN_PANEL_WIDTH = 360;
+  const [panelWidth, setPanelWidth] = useState(MIN_PANEL_WIDTH);
+  const screenRef = useRef<HTMLDivElement>(null);
+  const isDragging = useRef(false);
+
+  useEffect(() => {
+    const onMouseMove = (e: MouseEvent) => {
+      if (!isDragging.current || !screenRef.current) return;
+      const rect = screenRef.current.getBoundingClientRect();
+      const maxWidth = rect.width / 2;
+      const newWidth = rect.right - e.clientX;
+      setPanelWidth(Math.max(MIN_PANEL_WIDTH, Math.min(maxWidth, newWidth)));
+    };
+    const onMouseUp = () => {
+      if (!isDragging.current) return;
+      isDragging.current = false;
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onMouseUp);
+    return () => {
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", onMouseUp);
+    };
+  }, []);
+
   useEffect(() => {
     if (!toast) return;
     const timer = setTimeout(() => setToast(null), 3500);
@@ -197,7 +224,7 @@ export default function TreeScreen({ diagnosis }: Props) {
   }, [diagnosis, treeNodes]);
 
   return (
-    <div className="tree-screen">
+    <div className="tree-screen" ref={screenRef}>
       <div className="tree-canvas" ref={canvasRef}>
         <ReactFlow
           nodes={flowNodes}
@@ -221,7 +248,16 @@ export default function TreeScreen({ diagnosis }: Props) {
         </ReactFlow>
         {toast && <div className="toast">{toast}</div>}
       </div>
-      <aside className="side-panel">
+      <div
+        className="panel-divider"
+        onMouseDown={(e) => {
+          e.preventDefault();
+          isDragging.current = true;
+          document.body.style.cursor = "col-resize";
+          document.body.style.userSelect = "none";
+        }}
+      />
+      <aside className="side-panel" style={{ width: panelWidth }}>
         <div className="side-tabs">
           <button
             className={`side-tab${tab === "mining" ? " active" : ""}`}
@@ -233,7 +269,7 @@ export default function TreeScreen({ diagnosis }: Props) {
             className={`side-tab${tab === "ken" ? " active" : ""}`}
             onClick={() => setTab("ken")}
           >
-            💬 ケンと話す
+            💬 Kenと話す
           </button>
         </div>
         <div className="side-body">

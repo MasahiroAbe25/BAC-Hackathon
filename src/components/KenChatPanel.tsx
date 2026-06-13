@@ -91,13 +91,13 @@ export default function KenChatPanel({ diagnosis, treeNodes, onTopics }: Props) 
       <div className="chat-log" ref={logRef}>
         {messages.map((message, index) => (
           <div key={index} className={`chat-bubble ${message.role === "assistant" ? "ken" : "user"}`}>
-            {message.role === "assistant" && <span className="speaker">ケン 🤖</span>}
+            {message.role === "assistant" && <span className="speaker">Ken 🧑</span>}
             {message.content}
           </div>
         ))}
         {busy && (
           <div className="chat-bubble ken">
-            <span className="speaker">ケン 🤖</span>考え中…💭
+            <span className="speaker">Ken 🧑</span>考え中…💭
           </div>
         )}
       </div>
@@ -118,7 +118,7 @@ export default function KenChatPanel({ diagnosis, treeNodes, onTopics }: Props) 
           onKeyDown={(event) => {
             if (event.key === "Enter" && !event.nativeEvent.isComposing) send();
           }}
-          placeholder="ケンに話してみよう"
+          placeholder="Kenに話してみよう"
           disabled={busy}
         />
         <button className="primary-button" onClick={() => send()} disabled={busy || !input.trim()}>
@@ -136,7 +136,7 @@ export default function KenChatPanel({ diagnosis, treeNodes, onTopics }: Props) 
       </div>
       {usingMock && (
         <div className="status-note">
-          ※ いまはデモモードだよ(OPENROUTER_API_KEYを設定すると本物のケンと話せます)
+          ※ いまはデモモードだよ(OPENROUTER_API_KEYを設定すると本物のKenと話せます)
         </div>
       )}
     </div>

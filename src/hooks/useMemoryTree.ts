@@ -41,8 +41,12 @@ export function useMemoryTree(
 
   const addTopics = useCallback(
     (topics: TopicInput[], source: Source): AddResult[] => {
+      const existingLabels = new Set(
+        nodesRef.current.map((n) => n.label.trim().toLowerCase())
+      );
       const added = topics
         .filter((topic) => topic.label && topic.tags.length > 0)
+        .filter((topic) => !existingLabels.has(topic.label.trim().toLowerCase()))
         .map((topic) => topicToNode(topic, diagnosis.branches, source));
       if (added.length === 0) return [];
 

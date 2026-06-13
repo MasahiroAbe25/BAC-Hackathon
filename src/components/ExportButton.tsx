@@ -45,6 +45,9 @@ export const ExportButton = forwardRef<ExportHandle, Props>(
           maxY = Math.max(maxY, node.position.y + size.height / 2);
         }
 
+        // ノードサイズがまだ計測されていない場合は中断
+        if (!isFinite(minX) || !isFinite(minY) || !isFinite(maxX) || !isFinite(maxY)) return;
+
         const PADDING = 60;
         const bounds = {
           x: minX - PADDING,
