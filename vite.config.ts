@@ -5,6 +5,9 @@ import { defineConfig, type Connect, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
+// Gemini の OpenAI 互換エンドポイント — レスポンス形式が同じなので ken.ts 側の変更不要
+const GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions";
+const GEMINI_DEFAULT_MODEL = "gemini-3.1-flash-lite";
 
 /** .envファイルを直接読む(シェル環境変数のプレースホルダーに上書きされないよう、.envを最優先にする) */
 function readDotEnv(): Record<string, string> {
@@ -32,55 +35,102 @@ function isValidKey(key: string | undefined): key is string {
 
 function kenApiPlugin(): Plugin {
   const dotEnv = readDotEnv();
-  const apiKey = isValidKey(dotEnv.OPENROUTER_API_KEY)
+
+  const openrouterKey = isValidKey(dotEnv.OPENROUTER_API_KEY)
     ? dotEnv.OPENROUTER_API_KEY
     : isValidKey(process.env.OPENROUTER_API_KEY)
       ? process.env.OPENROUTER_API_KEY
       : "";
+  const geminiKey = isValidKey(dotEnv.GEMINI_API_KEY)
+    ? dotEnv.GEMINI_API_KEY
+    : isValidKey(process.env.GEMINI_API_KEY)
+      ? process.env.GEMINI_API_KEY
+      : "";
   const model = dotEnv.OPENROUTER_MODEL || process.env.OPENROUTER_MODEL || "openai/gpt-4o-mini";
+
   return {
     name: "ken-api",
     configureServer(server) {
-      if (!apiKey) {
-        server.config.logger.warn("[ken-api] OPENROUTER_API_KEYが見つからないため、ケンはデモモードで動作します");
+      const log = server.config.logger;
+      if (!openrouterKey && !geminiKey) {
+        log.warn("[ken-api] APIキーが見つかりません。デモモードで動作します");
+      } else if (openrouterKey) {
+        log.info(`[ken-api] OpenRouter有効 (model: ${model})${geminiKey ? " / Geminiフォールバック有効" : ""}`);
       } else {
-        server.config.logger.info(`[ken-api] OpenRouter有効 (model: ${model})`);
+        log.info(`[ken-api] Gemini APIのみ有効 (model: ${GEMINI_DEFAULT_MODEL})`);
       }
+
       server.middlewares.use("/api/ken", (req, res) => {
         if (req.method !== "POST") {
           res.statusCode = 405;
           res.end(JSON.stringify({ error: "method not allowed" }));
           return;
         }
-        if (!apiKey) {
+        if (!openrouterKey && !geminiKey) {
           res.statusCode = 503;
           res.setHeader("content-type", "application/json");
           res.end(JSON.stringify({ error: "no_api_key" }));
           return;
         }
+
         let body = "";
-        req.on("data", (chunk) => {
-          body += chunk;
-        });
+        req.on("data", (chunk) => { body += chunk; });
         req.on("end", async () => {
           try {
             const { system = "", messages = [], maxTokens } = JSON.parse(body);
-            const response = await fetch(OPENROUTER_URL, {
-              method: "POST",
-              headers: {
-                "content-type": "application/json",
-                authorization: `Bearer ${apiKey}`,
-              },
-              body: JSON.stringify({
-                model,
-                max_tokens: maxTokens ?? 1024,
-                messages: [{ role: "system", content: system }, ...messages],
-              }),
-            });
-            const data = await response.json();
-            res.statusCode = response.status;
+            const baseMessages = [{ role: "system", content: system }, ...messages];
+
+            // 1. OpenRouter を試みる
+            if (openrouterKey) {
+              const orRes = await fetch(OPENROUTER_URL, {
+                method: "POST",
+                headers: {
+                  "content-type": "application/json",
+                  authorization: `Bearer ${openrouterKey}`,
+                },
+                body: JSON.stringify({ model, max_tokens: maxTokens ?? 1024, messages: baseMessages }),
+              });
+
+              // リミット超過(429/403)以外はそのまま返す
+              if (orRes.ok || (orRes.status !== 429 && orRes.status !== 403)) {
+                const data = await orRes.json();
+                res.statusCode = orRes.status;
+                res.setHeader("content-type", "application/json");
+                res.end(JSON.stringify(data));
+                return;
+              }
+
+              log.warn(`[ken-api] OpenRouter ${orRes.status} → Gemini にフォールバック`);
+            }
+
+            // 2. Gemini フォールバック
+            if (geminiKey) {
+              const gemRes = await fetch(GEMINI_URL, {
+                method: "POST",
+                headers: {
+                  "content-type": "application/json",
+                  authorization: `Bearer ${geminiKey}`,
+                },
+                body: JSON.stringify({
+                  model: GEMINI_DEFAULT_MODEL,
+                  max_tokens: maxTokens ?? 1024,
+                  messages: baseMessages,
+                }),
+              });
+              const data = await gemRes.json();
+              if (!gemRes.ok) {
+                log.error(`[ken-api] Gemini ${gemRes.status}: ${JSON.stringify(data)}`);
+              }
+              res.statusCode = gemRes.status;
+              res.setHeader("content-type", "application/json");
+              res.end(JSON.stringify(data));
+              return;
+            }
+
+            // どちらも使えない
+            res.statusCode = 503;
             res.setHeader("content-type", "application/json");
-            res.end(JSON.stringify(data));
+            res.end(JSON.stringify({ error: "api_limit_exceeded_no_fallback" }));
           } catch (error) {
             res.statusCode = 500;
             res.setHeader("content-type", "application/json");
