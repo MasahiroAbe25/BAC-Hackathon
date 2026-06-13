@@ -91,8 +91,8 @@ function kenApiPlugin(): Plugin {
                 body: JSON.stringify({ model, max_tokens: maxTokens ?? 1024, messages: baseMessages }),
               });
 
-              // リミット超過(429/403)以外はそのまま返す
-              if (orRes.ok || (orRes.status !== 429 && orRes.status !== 403)) {
+              // 成功時はそのまま返す。エラー時は Gemini へフォールバック
+              if (orRes.ok) {
                 const data = await orRes.json();
                 res.statusCode = orRes.status;
                 res.setHeader("content-type", "application/json");

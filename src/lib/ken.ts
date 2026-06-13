@@ -16,7 +16,14 @@ async function callKenApi(
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ system, messages, maxTokens }),
   });
-  if (response.status === 503) return null; // APIキー未設定 → モックへ
+  if (response.status === 503) {
+    const data = await response.json().catch(() => ({}));
+    if ((data as { error?: string }).error === "api_limit_exceeded_no_fallback") {
+      // OpenRouter も Gemini も使えない状態 — 警告ログを出してモックへ
+      throw new Error("ken api: both OpenRouter and Gemini are unavailable");
+    }
+    return null; // no_api_key → モックへ
+  }
   if (!response.ok) {
     throw new Error(`ken api error: ${response.status}`);
   }
@@ -32,6 +39,12 @@ const MOCK_QUESTIONS = [
   "やっほー!ボクはケンだよ 👋 さっそくだけど、最近「これ覚えた!」って思ったことはあるかな?",
   "いいね、それすごく気になる!✨ ちなみに、最近ハマってることや興味がある分野はある?",
   "なるほどなるほど〜。じゃあ逆に、「これはちょっと苦手かも…」って思うことはあるかな?",
+  "ちょっと聞いてもいい?学校やバイト・インターンで「自分が一番動いたな」って場面、何か思い浮かぶ?",
+  "働くうえで「これだけは譲れない!」ってこと、ある? 場所でも時間でも雰囲気でも、なんでもOKだよ。",
+  "逆に「こんな職場・仕事はちょっとキツいかも…」って思うのはどんなとき?",
+  "就活のこと以外でもいいんだけど、最近いちばん「楽しかった!」って瞬間を教えてほしいな 😄",
+  "もし時間もお金も関係なかったら、何に一番エネルギーを使いたい?",
+  "チームで動くのと一人で集中するの、どっちがしっくりくる感じ?",
   "教えてくれてありがとう!😊 他にも話したいことがあったら聞かせてね。なければ「まとめてもらう」を押してみよう!",
 ];
 

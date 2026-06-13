@@ -104,6 +104,9 @@ export default function TreeScreen({ diagnosis }: Props) {
   }, [measureNodes, treeNodes, diagnosis]);
 
   const handleTopics = (topics: TopicInput[], source: Source) => {
+    // サイズ計測が完了する前に送信された場合はスキップ。
+    // 計測前にノードを配置すると fixedRef に誤った座標が永続的に固定されるため。
+    if (nodeSizes.size === 0) return;
     const results = addTopics(topics, source);
     if (results.length === 0) return;
     setFreshIds(new Set(results.map((result) => result.node.id)));
@@ -112,14 +115,14 @@ export default function TreeScreen({ diagnosis }: Props) {
 
   const rootSize = nodeSizes.get("center");
 
-  useEffect(() => {
-    const branches = new Map<string, NodeSize>();
-    for (const branch of diagnosis.branches) {
-      const size = nodeSizes.get(branch.id);
-      if (size) branches.set(branch.id, size);
-    }
-    sizesRef.current = { root: rootSize, branches };
-  }, [diagnosis, nodeSizes, rootSize]);
+  // useEffect ではなくレンダー中に同期更新することで、addTopics 呼び出し時に
+  // sizesRef が常に最新の nodeSizes を反映するようにする(1レンダー遅れを解消)。
+  const branchSizesForRef = new Map<string, NodeSize>();
+  for (const branch of diagnosis.branches) {
+    const size = nodeSizes.get(branch.id);
+    if (size) branchSizesForRef.set(branch.id, size);
+  }
+  sizesRef.current = { root: rootSize, branches: branchSizesForRef };
 
   const flowNodes: Node[] = useMemo(() => {
     const list: Node[] = [
