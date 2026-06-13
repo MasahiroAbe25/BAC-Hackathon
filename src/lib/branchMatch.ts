@@ -13,8 +13,16 @@ export function overlapCoefficient(a: string[], b: string[]): number {
   const setA = new Set(a);
   const setB = new Set(b);
   let inter = 0;
-  for (const x of setA) {
-    if (setB.has(x)) inter += 1;
+  for (const ta of setA) {
+    let matched = false;
+    for (const kb of setB) {
+      // 完全一致 or 部分一致（どちらか一方が他方を含む）
+      if (ta === kb || ta.includes(kb) || kb.includes(ta)) {
+        matched = true;
+        break;
+      }
+    }
+    if (matched) inter += 1;
   }
   return inter / Math.min(setA.size, setB.size);
 }
@@ -32,7 +40,11 @@ export function matchBranch(topic: TopicInput, branches: Branch[]): MatchResult 
   if (best.score >= THRESHOLD) {
     return { branchId: best.branchId, score: best.score, scores };
   }
-  return { branchId: null, score: best.score, scores };
+  // ベストエフォート: 完全無関係(score=0)でなければ最も近いブランチへ接続
+  if (best.score > 0 && best.branchId !== null) {
+    return { branchId: best.branchId, score: best.score, scores };
+  }
+  return { branchId: null, score: 0, scores };
 }
 
 let seq = 0;

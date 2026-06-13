@@ -55,6 +55,22 @@ button {
   color: var(--text-sub);
 }
 
+.back-button {
+  background: none;
+  border: 1.5px solid #ececf4;
+  color: var(--text-sub);
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 999px;
+  padding: 6px 14px;
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+
+.back-button:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
 /* ---------- select screen ---------- */
 .select-screen {
   max-width: 880px;
@@ -158,9 +174,35 @@ button {
   position: relative;
 }
 
+.panel-divider {
+  width: 5px;
+  flex-shrink: 0;
+  background: #ececf4;
+  cursor: col-resize;
+  transition: background 0.15s ease;
+  position: relative;
+}
+
+.panel-divider::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 3px;
+  height: 32px;
+  border-left: 1px solid #c5c2e8;
+  border-right: 1px solid #c5c2e8;
+  border-radius: 2px;
+}
+
+.panel-divider:hover {
+  background: var(--primary-light);
+}
+
 .side-panel {
-  width: 360px;
-  border-left: 1px solid #ececf4;
+  flex-shrink: 0;
+  border-left: none;
   background: #fff;
   display: flex;
   flex-direction: column;
@@ -505,4 +547,41 @@ button {
   padding: 10px 20px;
   animation: fade-in 0.3s ease;
   z-index: 10;
+}
+
+/* ---------- side actions bar ---------- */
+.side-actions {
+  display: flex;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid #ececf4;
+  flex-shrink: 0;
+}
+
+.side-export-button {
+  flex: 1;
+}
+
+/* ---------- export button ---------- */
+.export-button {
+  background: var(--primary);
+  border: none;
+  color: #fff;
+  font-weight: 700;
+  font-size: 13px;
+  border-radius: 999px;
+  padding: 8px 16px;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(91, 79, 224, 0.3);
+  transition: background 0.15s ease;
+  font-family: inherit;
+}
+
+.export-button:hover {
+  background: var(--primary-dark);
+}
+
+.export-button:disabled {
+  background: #c5c2e8;
+  cursor: default;
 }
