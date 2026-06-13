@@ -23,18 +23,86 @@ interface SimNode extends SimulationNodeDatum {
 const BRANCH_RADIUS = 150;
 const LEAF_RADIUS = 220;
 const FLOATING_RADIUS = 320;
-const BRANCH_ANGLES: Record<string, number> = {
-  weapon: -90,
-  growth: 30,
-  workstyle: 150,
+
+/**
+ * Radial layout parameters for the root's direct children (branches).
+ * - `startAngleDeg`: angle of the first branch (screen coords, +y points down,
+ *   so -90deg points straight up).
+ * - `stepAngleDeg`: angle increment between consecutive branches. With 3
+ *   branches this is 120deg (equilateral). To support 4+ directions in the
+ *   future, lower this value (e.g. 90deg for 4 branches) — no other code needs
+ *   to change.
+ */
+export const BRANCH_LAYOUT = {
+  radius: BRANCH_RADIUS,
+  startAngleDeg: -90,
+  stepAngleDeg: 120,
+  /**
+   * Visible gap (in px) between the root box and each child box, measured
+   * along the connector. Kept constant for every direction so all three
+   * connector lines read the same visible length.
+   */
+  gapPx: 48,
 };
 
-export function branchPosition(branchId: string, index: number): { x: number; y: number } {
-  const deg = BRANCH_ANGLES[branchId] ?? -90 + index * 120;
-  const rad = (deg * Math.PI) / 180;
+/** Fallback node sizes used before real DOM measurements are available. */
+const FALLBACK_NODE_SIZE: NodeSize = { width: 140, height: 56 };
+
+export interface NodeSize {
+  width: number;
+  height: number;
+}
+
+/** Angle (in radians, screen coords) for the branch at the given index. */
+export function branchAngle(index: number): number {
+  const deg = BRANCH_LAYOUT.startAngleDeg + index * BRANCH_LAYOUT.stepAngleDeg;
+  return (deg * Math.PI) / 180;
+}
+
+/**
+ * Distance from a node's centre to where the ray at `angle` exits the node's
+ * axis-aligned bounding box (half-width / half-height rectangle). This is the
+ * "radius of the box in that direction", so subtracting nothing and adding a
+ * constant gap yields a uniform visible line length regardless of node size.
+ */
+export function boxRadiusAtAngle(size: NodeSize, angle: number): number {
+  const halfW = size.width / 2;
+  const halfH = size.height / 2;
+  const cos = Math.cos(angle);
+  const sin = Math.sin(angle);
+  const tCandidates: number[] = [];
+  if (Math.abs(cos) > 1e-6) tCandidates.push(halfW / Math.abs(cos));
+  if (Math.abs(sin) > 1e-6) tCandidates.push(halfH / Math.abs(sin));
+  if (tCandidates.length === 0) return Math.max(halfW, halfH);
+  return Math.min(...tCandidates);
+}
+
+/**
+ * Position of a branch node, computed uniformly for every direction.
+ *
+ * radius = rootBoxRadius(angle) + GAP_PX + childBoxRadius(angle)
+ *
+ * so the centre-to-centre distance grows/shrinks with the node sizes while the
+ * visible edge-to-edge gap stays constant in all directions. When sizes are
+ * omitted it falls back to the plain `BRANCH_LAYOUT.radius`.
+ */
+export function branchPosition(
+  _branchId: string,
+  index: number,
+  rootSize?: NodeSize,
+  childSize?: NodeSize
+): { x: number; y: number } {
+  const rad = branchAngle(index);
+  let radius = BRANCH_LAYOUT.radius;
+  if (rootSize || childSize) {
+    const root = rootSize ?? FALLBACK_NODE_SIZE;
+    const child = childSize ?? FALLBACK_NODE_SIZE;
+    radius =
+      boxRadiusAtAngle(root, rad) + BRANCH_LAYOUT.gapPx + boxRadiusAtAngle(child, rad);
+  }
   return {
-    x: Math.cos(rad) * BRANCH_RADIUS,
-    y: Math.sin(rad) * BRANCH_RADIUS,
+    x: Math.cos(rad) * radius,
+    y: Math.sin(rad) * radius,
   };
 }
 
@@ -46,8 +114,11 @@ export function branchPosition(branchId: string, index: number): { x: number; y:
 export function computeLayout(
   nodes: TreeNode[],
   fixedPositions: Map<string, { x: number; y: number }>,
-  branchIndexById: Map<string, number>
+  branchIndexById: Map<string, number>,
+  sizes?: { root?: NodeSize; branches?: Map<string, NodeSize> }
 ): Positioned[] {
+  const rootSize = sizes?.root;
+  const branchSize = (branchId: string) => sizes?.branches?.get(branchId);
   const simNodes: SimNode[] = [];
   const links: SimulationLinkDatum<SimNode>[] = [];
 
@@ -55,7 +126,7 @@ export function computeLayout(
   simNodes.push(centerNode);
 
   for (const [branchId, index] of branchIndexById) {
-    const pos = branchPosition(branchId, index);
+    const pos = branchPosition(branchId, index, rootSize, branchSize(branchId));
     simNodes.push({ id: branchId, kind: "branch", fx: pos.x, fy: pos.y, x: pos.x, y: pos.y });
   }
 
@@ -74,7 +145,12 @@ export function computeLayout(
       sim.fx = fixed.x;
       sim.fy = fixed.y;
     } else if (node.type === "leaf" && node.parentBranchId) {
-      const parentPos = branchPosition(node.parentBranchId, branchIndexById.get(node.parentBranchId) ?? 0);
+      const parentPos = branchPosition(
+        node.parentBranchId,
+        branchIndexById.get(node.parentBranchId) ?? 0,
+        rootSize,
+        branchSize(node.parentBranchId)
+      );
       sim.x = parentPos.x * 1.4 + (Math.random() - 0.5) * 40;
       sim.y = parentPos.y * 1.4 + (Math.random() - 0.5) * 40;
     }

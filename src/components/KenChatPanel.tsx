@@ -1,15 +1,17 @@
 import { useEffect, useRef, useState } from "react";
-import type { Diagnosis, TopicInput } from "../types";
+import type { Diagnosis, TopicInput, TreeNode } from "../types";
 import { kenChat, kenSummarize, type ChatMessage } from "../lib/ken";
 import { mineText } from "../lib/tokenizer";
 
 interface Props {
   diagnosis: Diagnosis;
+  treeNodes: TreeNode[];
   onTopics: (topics: TopicInput[]) => void;
 }
 
-export default function KenChatPanel({ diagnosis, onTopics }: Props) {
+export default function KenChatPanel({ diagnosis, treeNodes, onTopics }: Props) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [suggestions, setSuggestions] = useState<string[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [usingMock, setUsingMock] = useState(false);
@@ -22,9 +24,10 @@ export default function KenChatPanel({ diagnosis, onTopics }: Props) {
     startedRef.current = true;
     (async () => {
       setBusy(true);
-      const reply = await kenChat(diagnosis, []);
+      const reply = await kenChat(diagnosis, [], treeNodes);
       setUsingMock(reply.mock);
       setMessages([{ role: "assistant", content: reply.text }]);
+      setSuggestions(reply.suggestions);
       setBusy(false);
     })();
   }, [diagnosis]);
@@ -39,23 +42,25 @@ export default function KenChatPanel({ diagnosis, onTopics }: Props) {
     }
   }, [busy]);
 
-  const send = async () => {
-    const content = input.trim();
+  const send = async (overrideContent?: string) => {
+    const content = (overrideContent ?? input).trim();
     if (!content || busy) return;
     setInput("");
+    setSuggestions([]);
     const nextMessages: ChatMessage[] = [...messages, { role: "user", content }];
     setMessages(nextMessages);
     setBusy(true);
-    const reply = await kenChat(diagnosis, nextMessages);
+    const reply = await kenChat(diagnosis, nextMessages, treeNodes);
     setUsingMock(reply.mock);
     setMessages([...nextMessages, { role: "assistant", content: reply.text }]);
+    setSuggestions(reply.suggestions);
     setBusy(false);
   };
 
   const summarize = async () => {
     if (busy || messages.filter((message) => message.role === "user").length === 0) return;
     setBusy(true);
-    const result = await kenSummarize(diagnosis, messages);
+    const result = await kenSummarize(diagnosis, messages, treeNodes);
     let topics = result.topics;
     if (topics.length === 1 && topics[0].label === "__MINE__") {
       const mined = await mineText(topics[0].tags[0]);
@@ -96,6 +101,15 @@ export default function KenChatPanel({ diagnosis, onTopics }: Props) {
           </div>
         )}
       </div>
+      {suggestions.length > 0 && !busy && (
+        <div className="chat-suggestions">
+          {suggestions.map((s, i) => (
+            <button key={i} className="suggestion-button" onClick={() => send(s)}>
+              {s}
+            </button>
+          ))}
+        </div>
+      )}
       <div className="chat-input-row">
         <input
           ref={inputRef}
@@ -107,7 +121,7 @@ export default function KenChatPanel({ diagnosis, onTopics }: Props) {
           placeholder="ケンに話してみよう"
           disabled={busy}
         />
-        <button className="primary-button" onClick={send} disabled={busy || !input.trim()}>
+        <button className="primary-button" onClick={() => send()} disabled={busy || !input.trim()}>
           送る
         </button>
       </div>

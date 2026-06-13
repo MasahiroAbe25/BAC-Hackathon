@@ -1,14 +1,22 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import type { Diagnosis, TopicInput, TreeNode, Source } from "../types";
 import { topicToNode } from "../lib/branchMatch";
-import { computeLayout } from "../lib/layout";
+import { computeLayout, type NodeSize } from "../lib/layout";
 
 export interface AddResult {
   node: TreeNode;
   branchLabel: string | null;
 }
 
-export function useMemoryTree(diagnosis: Diagnosis) {
+export interface LayoutSizes {
+  root?: NodeSize;
+  branches?: Map<string, NodeSize>;
+}
+
+export function useMemoryTree(
+  diagnosis: Diagnosis,
+  getSizes?: () => LayoutSizes | undefined
+) {
   const [treeNodes, setTreeNodes] = useState<TreeNode[]>([]);
   const [positions, setPositions] = useState<Map<string, { x: number; y: number }>>(new Map());
   const fixedRef = useRef<Map<string, { x: number; y: number }>>(new Map());
@@ -30,7 +38,7 @@ export function useMemoryTree(diagnosis: Diagnosis) {
       const next = [...nodesRef.current, ...added];
       nodesRef.current = next;
 
-      const layout = computeLayout(next, fixedRef.current, branchIndexById);
+      const layout = computeLayout(next, fixedRef.current, branchIndexById, getSizes?.());
       const newPositions = new Map<string, { x: number; y: number }>();
       for (const positioned of layout) {
         newPositions.set(positioned.id, { x: positioned.x, y: positioned.y });
@@ -45,7 +53,7 @@ export function useMemoryTree(diagnosis: Diagnosis) {
         return { node, branchLabel: branch?.label ?? null };
       });
     },
-    [diagnosis, branchIndexById]
+    [diagnosis, branchIndexById, getSizes]
   );
 
   return { treeNodes, positions, addTopics };

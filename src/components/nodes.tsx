@@ -1,12 +1,20 @@
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 
-const hiddenHandleStyle = { opacity: 0, pointerEvents: "none" as const };
+// Anchor both handles at the node centre so straight connectors run
+// centre-to-centre and stay symmetric in every direction.
+const centerHandleStyle = {
+  opacity: 0,
+  pointerEvents: "none" as const,
+  left: "50%",
+  top: "50%",
+  transform: "translate(-50%, -50%)",
+};
 
 function Handles() {
   return (
     <>
-      <Handle type="target" position={Position.Top} style={hiddenHandleStyle} />
-      <Handle type="source" position={Position.Bottom} style={hiddenHandleStyle} />
+      <Handle type="target" position={Position.Top} style={centerHandleStyle} />
+      <Handle type="source" position={Position.Bottom} style={centerHandleStyle} />
     </>
   );
 }

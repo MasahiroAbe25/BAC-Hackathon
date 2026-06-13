@@ -1,33 +1,10 @@
-import type { Diagnosis, TopicInput } from "../types";
+import type { Diagnosis, TopicInput, TreeNode } from "../types";
+import { buildKenSystemPrompt, KEN_SUMMARY_INSTRUCTION } from "./kenPersona";
 
 export interface ChatMessage {
   role: "user" | "assistant";
   content: string;
 }
-
-function buildSystemPrompt(diagnosis: Diagnosis): string {
-  const branchLines = diagnosis.branches
-    .map((branch) => `- ${branch.category}: ${branch.label}`)
-    .join("\n");
-  return `あなたは就活アプリのAIキャラクター「ケン」です。フレンドリーで親しみやすく、絵文字や「〜だね」「〜してみよう」のような柔らかい語尾で話します。
-
-ユーザーは就活占いで次の診断結果を受け取りました:
-- 診断タイトル: ${diagnosis.title}
-- 説明: ${diagnosis.summary}
-- ブランチ:
-${branchLines}
-
-あなたの役割は、この診断結果の文脈に沿って、ユーザーの「最近覚えたこと・興味があること・苦手なこと」を引き出す質問を1つずつ投げかけることです。
-- 1回の発話は短く(2〜3文以内)
-- ユーザーの回答に軽く共感してから、次の質問につなげる
-- 具体的なエピソードやキーワードが出るように深掘りする`;
-}
-
-const SUMMARY_INSTRUCTION = `ここまでの会話から、ユーザーが話した「覚えたこと・興味・弱点」をトピックとして抽出してください。
-以下のJSON形式のみで出力してください(説明文・コードブロック記号は不要):
-{"topics": [{"label": "トピックの短い要約(14文字以内)", "tags": ["関連キーワード", ...]}]}
-- tagsには会話に出た名詞・スキル・分野などを5〜8個入れる
-- topicは1〜3個程度`;
 
 async function callKenApi(
   system: string,
@@ -39,7 +16,14 @@ async function callKenApi(
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ system, messages, maxTokens }),
   });
-  if (response.status === 503) return null; // APIキー未設定 → モックへ
+  if (response.status === 503) {
+    const data = await response.json().catch(() => ({}));
+    if ((data as { error?: string }).error === "api_limit_exceeded_no_fallback") {
+      // OpenRouter も Gemini も使えない状態 — 警告ログを出してモックへ
+      throw new Error("ken api: both OpenRouter and Gemini are unavailable");
+    }
+    return null; // no_api_key → モックへ
+  }
   if (!response.ok) {
     throw new Error(`ken api error: ${response.status}`);
   }
@@ -55,6 +39,12 @@ const MOCK_QUESTIONS = [
   "やっほー!ボクはケンだよ 👋 さっそくだけど、最近「これ覚えた!」って思ったことはあるかな?",
   "いいね、それすごく気になる!✨ ちなみに、最近ハマってることや興味がある分野はある?",
   "なるほどなるほど〜。じゃあ逆に、「これはちょっと苦手かも…」って思うことはあるかな?",
+  "ちょっと聞いてもいい?学校やバイト・インターンで「自分が一番動いたな」って場面、何か思い浮かぶ?",
+  "働くうえで「これだけは譲れない!」ってこと、ある? 場所でも時間でも雰囲気でも、なんでもOKだよ。",
+  "逆に「こんな職場・仕事はちょっとキツいかも…」って思うのはどんなとき?",
+  "就活のこと以外でもいいんだけど、最近いちばん「楽しかった!」って瞬間を教えてほしいな 😄",
+  "もし時間もお金も関係なかったら、何に一番エネルギーを使いたい?",
+  "チームで動くのと一人で集中するの、どっちがしっくりくる感じ?",
   "教えてくれてありがとう!😊 他にも話したいことがあったら聞かせてね。なければ「まとめてもらう」を押してみよう!",
 ];
 
@@ -64,32 +54,54 @@ function mockReply(turnCount: number): string {
 
 export interface KenReply {
   text: string;
+  suggestions: string[];
   mock: boolean;
+}
+
+/** NEXT:[...] 行をテキストから抽出し、{text, suggestions} に分割する */
+function splitSuggestions(raw: string): { text: string; suggestions: string[] } {
+  const match = raw.match(/\nNEXT:(\[.*?\])\s*$/s);
+  if (!match) return { text: raw.trim(), suggestions: [] };
+  const text = raw.slice(0, match.index).trim();
+  try {
+    const suggestions = JSON.parse(match[1]);
+    if (Array.isArray(suggestions) && suggestions.every((s) => typeof s === "string")) {
+      return { text, suggestions };
+    }
+  } catch {
+    // パース失敗時は suggestions なしで返す
+  }
+  return { text, suggestions: [] };
 }
 
 export async function kenChat(
   diagnosis: Diagnosis,
-  messages: ChatMessage[]
+  messages: ChatMessage[],
+  treeNodes: TreeNode[] = []
 ): Promise<KenReply> {
-  const system = buildSystemPrompt(diagnosis);
+  const system = buildKenSystemPrompt({ diagnosis, treeNodes });
   try {
-    const text = await callKenApi(system, ensureLeadingUser(messages), 512);
-    if (text !== null) return { text, mock: false };
+    const raw = await callKenApi(system, ensureLeadingUser(messages), 600);
+    if (raw !== null) {
+      const { text, suggestions } = splitSuggestions(raw);
+      return { text, suggestions, mock: false };
+    }
   } catch (error) {
     console.warn("ken api failed, falling back to mock:", error);
   }
   const assistantTurns = messages.filter((message) => message.role === "assistant").length;
-  return { text: mockReply(assistantTurns), mock: true };
+  return { text: mockReply(assistantTurns), suggestions: [], mock: true };
 }
 
 export async function kenSummarize(
   diagnosis: Diagnosis,
-  messages: ChatMessage[]
+  messages: ChatMessage[],
+  treeNodes: TreeNode[] = []
 ): Promise<{ topics: TopicInput[]; mock: boolean }> {
-  const system = buildSystemPrompt(diagnosis);
+  const system = buildKenSystemPrompt({ diagnosis, treeNodes });
   const summaryMessages: ChatMessage[] = [
     ...ensureLeadingUser(messages),
-    { role: "user", content: SUMMARY_INSTRUCTION },
+    { role: "user", content: KEN_SUMMARY_INSTRUCTION },
   ];
   try {
     const text = await callKenApi(system, summaryMessages, 1024);
@@ -104,7 +116,8 @@ export async function kenSummarize(
 }
 
 function ensureLeadingUser(messages: ChatMessage[]): ChatMessage[] {
-  if (messages.length > 0 && messages[0].role === "assistant") {
+  // Gemini 等は user メッセージが必須。空配列・先頭が assistant の場合にトリガーを挿入する
+  if (messages.length === 0 || messages[0].role === "assistant") {
     return [{ role: "user", content: "(会話を始めてください)" }, ...messages];
   }
   return messages;

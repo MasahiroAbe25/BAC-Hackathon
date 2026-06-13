@@ -1,4 +1,5 @@
-import type { TopicInput } from "../types";
+import type { TopicInput, DomainTermHit } from "../types";
+import { scanDomainTerms } from "./domainDictionary";
 
 interface KuromojiToken {
   surface_form: string;
@@ -77,6 +78,11 @@ export async function mineText(text: string): Promise<TopicInput | null> {
   const tokenizer = await getTokenizer();
   const tokens = tokenizer.tokenize(text);
 
+  // 先にドメイン辞書(カスタム用語辞書)を最長一致で走査する。
+  // kuromojiが分割してしまう複合語・スラングを1キーワードとして優先採用する。
+  const domainMatches = scanDomainTerms(text);
+  const domainTermSet = new Set(domainMatches.map((match) => match.term));
+
   const freq = new Map<string, number>();
   const compounds: string[][] = [];
   let current: string[] = [];
@@ -93,8 +99,6 @@ export async function mineText(text: string): Promise<TopicInput | null> {
   }
   if (current.length >= 2) compounds.push(current);
 
-  if (freq.size === 0) return null;
-
   // 複合名詞(連続する名詞の結合)もタグに含める。
   // diagnoses.jsonのkeywordsには「仮説検証」のような複合語が多いため。
   // 構成語そのものはノイズになるため除外する。
@@ -108,13 +112,45 @@ export async function mineText(text: string): Promise<TopicInput | null> {
     }
   }
 
+  // ドメイン辞書の一致語を、重み付きで頻度マップへ反映する(補完・上書き)。
+  // 一致語の構成断片(例:「推し活」に対する「推し」「活」)はノイズになるため除外する。
+  const domainHits = new Map<string, DomainTermHit>();
+  for (const match of domainMatches) {
+    freq.set(match.term, (freq.get(match.term) ?? 0) + match.weight);
+    domainHits.set(match.term, {
+      term: match.term,
+      category: match.category,
+      weight: match.weight,
+    });
+  }
+  if (domainTermSet.size > 0) {
+    for (const word of [...freq.keys()]) {
+      if (domainTermSet.has(word)) continue;
+      for (const term of domainTermSet) {
+        if (term !== word && term.includes(word)) {
+          freq.delete(word);
+          break;
+        }
+      }
+    }
+  }
+
+  if (freq.size === 0) return null;
+
   const ranked = [...freq.entries()]
     .sort((a, b) => b[1] - a[1])
     .map(([word]) => word)
     .slice(0, 10);
 
-  const labelSource = compounds[0]?.join("") ?? ranked.slice(0, 2).join("・");
+  const labelSource =
+    domainMatches[0]?.term ?? compounds[0]?.join("") ?? ranked.slice(0, 2).join("・");
   const label = labelSource.length > 14 ? `${labelSource.slice(0, 14)}…` : labelSource;
 
-  return { label, tags: ranked };
+  const domainTerms = ranked
+    .map((word) => domainHits.get(word))
+    .filter((hit): hit is DomainTermHit => Boolean(hit));
+
+  return domainTerms.length > 0
+    ? { label, tags: ranked, domainTerms }
+    : { label, tags: ranked };
 }

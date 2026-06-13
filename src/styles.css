@@ -415,6 +415,32 @@ button {
   margin-bottom: 2px;
 }
 
+.chat-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 0 4px;
+}
+
+.suggestion-button {
+  background: var(--primary-light, #f0eeff);
+  border: 1.5px solid var(--primary);
+  color: var(--primary);
+  border-radius: 999px;
+  padding: 6px 14px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+  text-align: left;
+}
+
+.suggestion-button:hover {
+  background: var(--primary);
+  color: #fff;
+}
+
 .chat-input-row {
   display: flex;
   gap: 8px;

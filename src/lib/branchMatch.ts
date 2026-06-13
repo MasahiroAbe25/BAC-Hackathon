@@ -43,15 +43,34 @@ export function topicToNode(
   source: "mining" | "ken_dialogue"
 ): TreeNode {
   const result = matchBranch(topic, branches);
+
+  // ドメイン辞書由来のカテゴリを補完的に利用する:
+  // Overlap係数では閾値に届かないが、辞書語のcategoryがブランチのcategoryと
+  // 一致する場合は、そのブランチへ接続する(あくまで上書き・補完として動作)。
+  let branchId = result.branchId;
+  let similarity = result.score;
+  if (!branchId && topic.domainTerms && topic.domainTerms.length > 0) {
+    const byWeight = [...topic.domainTerms].sort((a, b) => b.weight - a.weight);
+    for (const hit of byWeight) {
+      if (!hit.category) continue;
+      const matched = branches.find((branch) => branch.category === hit.category);
+      if (matched) {
+        branchId = matched.id;
+        similarity = Math.max(similarity, result.scores[matched.id] ?? 0);
+        break;
+      }
+    }
+  }
+
   seq += 1;
   return {
     id: `topic-${Date.now()}-${seq}`,
-    type: result.branchId ? "leaf" : "floating",
+    type: branchId ? "leaf" : "floating",
     label: topic.label,
     tags: topic.tags,
     source,
-    parentBranchId: result.branchId,
-    similarity: result.score,
+    parentBranchId: branchId,
+    similarity,
     createdAt: new Date().toISOString(),
   };
 }
