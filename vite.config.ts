@@ -7,7 +7,14 @@ import react from "@vitejs/plugin-react";
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 // Gemini の OpenAI 互換エンドポイント — レスポンス形式が同じなので ken.ts 側の変更不要
 const GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions";
-const GEMINI_DEFAULT_MODEL = "gemini-3.1-flash-lite";
+// レート制限に達した際に順番に試すモデルリスト
+const GEMINI_MODELS = [
+  "gemini-3.1-flash-lite",
+  "gemini-2.5-flash",
+  "gemini-2.5-pro",
+  "gemini-2.0-flash",
+  "gemini-2.0-flash-lite",
+];
 
 /** .envファイルを直接読む(シェル環境変数のプレースホルダーに上書きされないよう、.envを最優先にする) */
 function readDotEnv(): Record<string, string> {
@@ -57,7 +64,7 @@ function kenApiPlugin(): Plugin {
       } else if (openrouterKey) {
         log.info(`[ken-api] OpenRouter有効 (model: ${model})${geminiKey ? " / Geminiフォールバック有効" : ""}`);
       } else {
-        log.info(`[ken-api] Gemini APIのみ有効 (model: ${GEMINI_DEFAULT_MODEL})`);
+        log.info(`[ken-api] Gemini APIのみ有効 (フォールバック順: ${GEMINI_MODELS.join(" → ")})`);
       }
 
       server.middlewares.use("/api/ken", (req, res) => {
@@ -103,28 +110,45 @@ function kenApiPlugin(): Plugin {
               log.warn(`[ken-api] OpenRouter ${orRes.status} → Gemini にフォールバック`);
             }
 
-            // 2. Gemini フォールバック
+            // 2. Gemini フォールバック(モデルを順番に試す)
             if (geminiKey) {
-              const gemRes = await fetch(GEMINI_URL, {
-                method: "POST",
-                headers: {
-                  "content-type": "application/json",
-                  authorization: `Bearer ${geminiKey}`,
-                },
-                body: JSON.stringify({
-                  model: GEMINI_DEFAULT_MODEL,
-                  max_tokens: maxTokens ?? 1024,
-                  messages: baseMessages,
-                }),
-              });
-              const data = await gemRes.json();
-              if (!gemRes.ok) {
-                log.error(`[ken-api] Gemini ${gemRes.status}: ${JSON.stringify(data)}`);
+              for (const geminiModel of GEMINI_MODELS) {
+                const gemRes = await fetch(GEMINI_URL, {
+                  method: "POST",
+                  headers: {
+                    "content-type": "application/json",
+                    authorization: `Bearer ${geminiKey}`,
+                  },
+                  body: JSON.stringify({
+                    model: geminiModel,
+                    max_tokens: maxTokens ?? 1024,
+                    messages: baseMessages,
+                  }),
+                });
+
+                if (gemRes.ok) {
+                  const data = await gemRes.json();
+                  res.statusCode = 200;
+                  res.setHeader("content-type", "application/json");
+                  res.end(JSON.stringify(data));
+                  return;
+                }
+
+                const errData = await gemRes.json().catch(() => ({}));
+                const status = gemRes.status;
+
+                // 認証エラーはキー自体が無効なので即停止
+                if (status === 401 || status === 403) {
+                  log.error(`[ken-api] Gemini 認証エラー ${status}: ${JSON.stringify(errData)}`);
+                  res.statusCode = status;
+                  res.setHeader("content-type", "application/json");
+                  res.end(JSON.stringify(errData));
+                  return;
+                }
+
+                // レート制限(429)・モデル未対応(404)・サーバーエラー(5xx)は次のモデルを試す
+                log.warn(`[ken-api] Gemini ${geminiModel} ${status} → 次のモデルへフォールバック`);
               }
-              res.statusCode = gemRes.status;
-              res.setHeader("content-type", "application/json");
-              res.end(JSON.stringify(data));
-              return;
             }
 
             // どちらも使えない
