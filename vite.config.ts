@@ -4,18 +4,6 @@ import { dirname, join, normalize } from "node:path";
 import { defineConfig, type Connect, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 
-const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
-// Gemini の OpenAI 互換エンドポイント — レスポンス形式が同じなので ken.ts 側の変更不要
-const GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions";
-// レート制限に達した際に順番に試すモデルリスト
-const GEMINI_MODELS = [
-  "gemini-3.1-flash-lite",
-  "gemini-2.5-flash",
-  "gemini-2.5-pro",
-  "gemini-2.0-flash",
-  "gemini-2.0-flash-lite",
-];
-
 /** .envファイルを直接読む(シェル環境変数のプレースホルダーに上書きされないよう、.envを最優先にする) */
 function readDotEnv(): Record<string, string> {
   const result: Record<string, string> = {};
@@ -40,43 +28,83 @@ function isValidKey(key: string | undefined): key is string {
   return Boolean(key && !key.startsWith("your_"));
 }
 
+function getEnv(dotEnv: Record<string, string>, key: string): string | undefined {
+  return dotEnv[key] || process.env[key];
+}
+
+function parseModels(val: string | undefined, defaultModel: string): string[] {
+  if (!val) return [defaultModel];
+  return val.split(",").map((s) => s.trim()).filter(Boolean);
+}
+
+async function tryWithModels(
+  url: string,
+  key: string,
+  models: string[],
+  messages: unknown[],
+  maxTokens: number
+): Promise<unknown | null> {
+  for (const model of models) {
+    const r = await fetch(url, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
+      body: JSON.stringify({ model, max_tokens: maxTokens, messages }),
+    });
+    if (r.ok) return r.json();
+    if (r.status === 400 || r.status === 401 || r.status === 403) return null;
+  }
+  return null;
+}
+
+async function tryAnthropicWithModels(
+  key: string,
+  models: string[],
+  messages: { role: string; content: string }[],
+  maxTokens: number
+): Promise<unknown | null> {
+  const system = messages.find((m) => m.role === "system")?.content;
+  const userMessages = messages.filter((m) => m.role !== "system");
+  for (const model of models) {
+    const r = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-api-key": key,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify({
+        model,
+        max_tokens: maxTokens,
+        ...(system ? { system } : {}),
+        messages: userMessages,
+      }),
+    });
+    if (r.ok) {
+      const raw = await r.json() as {
+        content?: { text: string }[];
+        stop_reason?: string;
+        usage?: { input_tokens: number; output_tokens: number };
+      };
+      return {
+        choices: [{ message: { role: "assistant", content: raw.content?.[0]?.text ?? "" }, finish_reason: raw.stop_reason ?? "stop" }],
+        usage: { prompt_tokens: raw.usage?.input_tokens, completion_tokens: raw.usage?.output_tokens },
+      };
+    }
+    if (r.status === 400 || r.status === 401 || r.status === 403) return null;
+  }
+  return null;
+}
+
 function kenApiPlugin(): Plugin {
   const dotEnv = readDotEnv();
-
-  const openrouterKey = isValidKey(dotEnv.OPENROUTER_API_KEY)
-    ? dotEnv.OPENROUTER_API_KEY
-    : isValidKey(process.env.OPENROUTER_API_KEY)
-      ? process.env.OPENROUTER_API_KEY
-      : "";
-  const geminiKey = isValidKey(dotEnv.GEMINI_API_KEY)
-    ? dotEnv.GEMINI_API_KEY
-    : isValidKey(process.env.GEMINI_API_KEY)
-      ? process.env.GEMINI_API_KEY
-      : "";
-  const model = dotEnv.OPENROUTER_MODEL || process.env.OPENROUTER_MODEL || "openai/gpt-4o-mini";
 
   return {
     name: "ken-api",
     configureServer(server) {
-      const log = server.config.logger;
-      if (!openrouterKey && !geminiKey) {
-        log.warn("[ken-api] APIキーが見つかりません。デモモードで動作します");
-      } else if (openrouterKey) {
-        log.info(`[ken-api] OpenRouter有効 (model: ${model})${geminiKey ? " / Geminiフォールバック有効" : ""}`);
-      } else {
-        log.info(`[ken-api] Gemini APIのみ有効 (フォールバック順: ${GEMINI_MODELS.join(" → ")})`);
-      }
-
       server.middlewares.use("/api/ken", (req, res) => {
         if (req.method !== "POST") {
           res.statusCode = 405;
           res.end(JSON.stringify({ error: "method not allowed" }));
-          return;
-        }
-        if (!openrouterKey && !geminiKey) {
-          res.statusCode = 503;
-          res.setHeader("content-type", "application/json");
-          res.end(JSON.stringify({ error: "no_api_key" }));
           return;
         }
 
@@ -85,76 +113,66 @@ function kenApiPlugin(): Plugin {
         req.on("end", async () => {
           try {
             const { system = "", messages = [], maxTokens } = JSON.parse(body);
+            const tokens: number = maxTokens ?? 1024;
             const baseMessages = [{ role: "system", content: system }, ...messages];
 
-            // 1. OpenRouter を試みる
-            if (openrouterKey) {
-              const orRes = await fetch(OPENROUTER_URL, {
-                method: "POST",
-                headers: {
-                  "content-type": "application/json",
-                  authorization: `Bearer ${openrouterKey}`,
-                },
-                body: JSON.stringify({ model, max_tokens: maxTokens ?? 1024, messages: baseMessages }),
-              });
+            const compatProviders = [
+              {
+                url: "https://openrouter.ai/api/v1/chat/completions",
+                key: getEnv(dotEnv, "OPENROUTER_API_KEY"),
+                models: parseModels(getEnv(dotEnv, "OPENROUTER_MODEL"), "openai/gpt-4o-mini"),
+              },
+              {
+                url: "https://api.openai.com/v1/chat/completions",
+                key: getEnv(dotEnv, "OPENAI_API_KEY"),
+                models: parseModels(getEnv(dotEnv, "OPENAI_MODEL"), "gpt-4o-mini"),
+              },
+              {
+                url: "https://api.groq.com/openai/v1/chat/completions",
+                key: getEnv(dotEnv, "GROQ_API_KEY"),
+                models: parseModels(getEnv(dotEnv, "GROQ_MODEL"), "llama-3.3-70b-versatile"),
+              },
+              {
+                url: "https://api.mistral.ai/v1/chat/completions",
+                key: getEnv(dotEnv, "MISTRAL_API_KEY"),
+                models: parseModels(getEnv(dotEnv, "MISTRAL_MODEL"), "mistral-small-latest"),
+              },
+              {
+                url: "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+                key: getEnv(dotEnv, "GEMINI_API_KEY"),
+                models: parseModels(getEnv(dotEnv, "GEMINI_MODEL"), "gemini-2.5-flash"),
+              },
+            ];
 
-              // 成功時はそのまま返す。エラー時は Gemini へフォールバック
-              if (orRes.ok) {
-                const data = await orRes.json();
-                res.statusCode = orRes.status;
-                res.setHeader("content-type", "application/json");
-                res.end(JSON.stringify(data));
-                return;
-              }
+            const anthropicKey = getEnv(dotEnv, "ANTHROPIC_API_KEY");
+            const hasAnyKey = compatProviders.some((p) => isValidKey(p.key)) || isValidKey(anthropicKey);
 
-              log.warn(`[ken-api] OpenRouter ${orRes.status} → Gemini にフォールバック`);
+            if (!hasAnyKey) {
+              res.statusCode = 503;
+              res.setHeader("content-type", "application/json");
+              res.end(JSON.stringify({ error: "no_api_key" }));
+              return;
             }
 
-            // 2. Gemini フォールバック(モデルを順番に試す)
-            if (geminiKey) {
-              for (const geminiModel of GEMINI_MODELS) {
-                const gemRes = await fetch(GEMINI_URL, {
-                  method: "POST",
-                  headers: {
-                    "content-type": "application/json",
-                    authorization: `Bearer ${geminiKey}`,
-                  },
-                  body: JSON.stringify({
-                    model: geminiModel,
-                    max_tokens: maxTokens ?? 1024,
-                    messages: baseMessages,
-                  }),
-                });
+            const sendJson = (status: number, data: unknown) => {
+              res.statusCode = status;
+              res.setHeader("content-type", "application/json");
+              res.end(JSON.stringify(data));
+            };
 
-                if (gemRes.ok) {
-                  const data = await gemRes.json();
-                  res.statusCode = 200;
-                  res.setHeader("content-type", "application/json");
-                  res.end(JSON.stringify(data));
-                  return;
-                }
-
-                const errData = await gemRes.json().catch(() => ({}));
-                const status = gemRes.status;
-
-                // 認証エラーはキー自体が無効なので即停止
-                if (status === 401 || status === 403) {
-                  log.error(`[ken-api] Gemini 認証エラー ${status}: ${JSON.stringify(errData)}`);
-                  res.statusCode = status;
-                  res.setHeader("content-type", "application/json");
-                  res.end(JSON.stringify(errData));
-                  return;
-                }
-
-                // レート制限(429)・モデル未対応(404)・サーバーエラー(5xx)は次のモデルを試す
-                log.warn(`[ken-api] Gemini ${geminiModel} ${status} → 次のモデルへフォールバック`);
-              }
+            for (const p of compatProviders) {
+              if (!isValidKey(p.key)) continue;
+              const data = await tryWithModels(p.url, p.key, p.models, baseMessages, tokens);
+              if (data) { sendJson(200, data); return; }
             }
 
-            // どちらも使えない
-            res.statusCode = 503;
-            res.setHeader("content-type", "application/json");
-            res.end(JSON.stringify({ error: "api_limit_exceeded_no_fallback" }));
+            if (isValidKey(anthropicKey)) {
+              const models = parseModels(getEnv(dotEnv, "ANTHROPIC_MODEL"), "claude-3-5-haiku-20241022");
+              const data = await tryAnthropicWithModels(anthropicKey, models, baseMessages, tokens);
+              if (data) { sendJson(200, data); return; }
+            }
+
+            sendJson(503, { error: "api_limit_exceeded_no_fallback" });
           } catch (error) {
             res.statusCode = 500;
             res.setHeader("content-type", "application/json");

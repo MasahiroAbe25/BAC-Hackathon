@@ -19,8 +19,8 @@ async function callKenApi(
   if (response.status === 503) {
     const data = await response.json().catch(() => ({}));
     if ((data as { error?: string }).error === "api_limit_exceeded_no_fallback") {
-      // OpenRouter も Gemini も使えない状態 — 警告ログを出してモックへ
-      throw new Error("ken api: both OpenRouter and Gemini are unavailable");
+      // 全プロバイダーが使用不可 — 警告ログを出してモックへ
+      throw new Error("ken api: all AI providers are unavailable");
     }
     return null; // no_api_key → モックへ
   }

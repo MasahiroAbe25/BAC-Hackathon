@@ -20,11 +20,28 @@ npm run dev
 
 `.env` ファイルをプロジェクトルートに作成してください(`.env.example` をコピーして編集)。
 
+**いずれか1つ以上設定するとAIモードで動作します。** 複数設定した場合は上から順に試行し、失敗したら次のプロバイダーへ自動フォールバックします。
+
 | 変数名 | 説明 |
 |---|---|
-| `OPENROUTER_API_KEY` | OpenRouter APIキー。未設定でもデモモードで動作します |
-| `OPENROUTER_MODEL` | 使用モデル(省略時: `openai/gpt-4o-mini`) |
-| `GEMINI_API_KEY` | GeminiフォールバックAPIキー。OpenRouterに障害・制限が発生したときに自動切り替えされます |
+| `OPENROUTER_API_KEY` | [OpenRouter](https://openrouter.ai/) のAPIキー(推奨: 多数のモデルを1キーで利用可能) |
+| `OPENROUTER_MODEL` | 使用モデル(省略時: `openai/gpt-4o-mini`)。カンマ区切りで複数指定可 |
+| `OPENAI_API_KEY` | [OpenAI](https://platform.openai.com/api-keys) のAPIキー |
+| `OPENAI_MODEL` | 使用モデル(省略時: `gpt-4o-mini`)。カンマ区切りで複数指定可 |
+| `GROQ_API_KEY` | [Groq](https://console.groq.com/keys) のAPIキー(無料枠あり・高速) |
+| `GROQ_MODEL` | 使用モデル(省略時: `llama-3.3-70b-versatile`)。カンマ区切りで複数指定可 |
+| `MISTRAL_API_KEY` | [Mistral AI](https://console.mistral.ai/api-keys/) のAPIキー |
+| `MISTRAL_MODEL` | 使用モデル(省略時: `mistral-small-latest`)。カンマ区切りで複数指定可 |
+| `GEMINI_API_KEY` | [Google Gemini](https://aistudio.google.com/app/apikey) のAPIキー |
+| `GEMINI_MODEL` | 使用モデル(省略時: `gemini-2.5-flash`)。カンマ区切りで複数指定可 |
+| `ANTHROPIC_API_KEY` | [Anthropic](https://console.anthropic.com/settings/keys) のAPIキー |
+| `ANTHROPIC_MODEL` | 使用モデル(省略時: `claude-3-5-haiku-20241022`)。カンマ区切りで複数指定可 |
+
+**モデルのカンマ区切り指定例:**
+```
+GEMINI_MODEL=gemini-2.5-flash,gemini-2.0-flash,gemini-2.0-flash-lite
+```
+先頭から順に試し、レート上限などで失敗したら次のモデルを使用します。
 
 **APIキーなしでも動きます。** その場合ケンは定型のデモ質問で応答し、会話まとめはローカルのテキスト解析で代替されます。
 
