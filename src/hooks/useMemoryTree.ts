@@ -47,7 +47,7 @@ export function useMemoryTree(
       const added = topics
         .filter((topic) => topic.label && topic.tags.length > 0)
         .filter((topic) => !existingLabels.has(topic.label.trim().toLowerCase()))
-        .map((topic) => topicToNode(topic, diagnosis.branches, source));
+        .map((topic) => topicToNode(topic, diagnosis.branches, source, nodesRef.current));
       if (added.length === 0) return [];
 
       const next = [...nodesRef.current, ...added];
@@ -80,5 +80,18 @@ export function useMemoryTree(
     clearTree(diagnosis.id);
   }, [diagnosis.id]);
 
-  return { treeNodes, positions, addTopics, resetTree };
+  const reorganizeLayout = useCallback(() => {
+    if (nodesRef.current.length === 0) return;
+    fixedRef.current = new Map();
+    const layout = computeLayout(nodesRef.current, fixedRef.current, branchIndexById, getSizes?.());
+    const newPositions = new Map<string, { x: number; y: number }>();
+    for (const positioned of layout) {
+      newPositions.set(positioned.id, { x: positioned.x, y: positioned.y });
+      fixedRef.current.set(positioned.id, { x: positioned.x, y: positioned.y });
+    }
+    setPositions(newPositions);
+    saveTree(diagnosis.id, nodesRef.current, newPositions);
+  }, [diagnosis.id, branchIndexById, getSizes]);
+
+  return { treeNodes, positions, addTopics, resetTree, reorganizeLayout };
 }

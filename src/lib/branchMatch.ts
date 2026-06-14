@@ -1,4 +1,4 @@
-import type { Branch, TopicInput, TreeNode } from "../types";
+import type { Branch, TopicInput, TreeNode, Source } from "../types";
 
 export interface MatchResult {
   branchId: string | null;
@@ -7,6 +7,7 @@ export interface MatchResult {
 }
 
 const THRESHOLD = 0.5;
+const SUB_LEAF_THRESHOLD = 0.65;
 
 export function overlapCoefficient(a: string[], b: string[]): number {
   if (a.length === 0 || b.length === 0) return 0;
@@ -52,7 +53,8 @@ let seq = 0;
 export function topicToNode(
   topic: TopicInput,
   branches: Branch[],
-  source: "mining" | "ken_dialogue"
+  source: Source,
+  existingNodes: TreeNode[] = []
 ): TreeNode {
   const result = matchBranch(topic, branches);
 
@@ -74,6 +76,26 @@ export function topicToNode(
     }
   }
 
+  // 同一ブランチの直接葉と類似度が高い場合は孫葉として配置する
+  let parentLeafId: string | null = null;
+  if (branchId && existingNodes.length > 0) {
+    const candidates = existingNodes.filter(
+      (n) => n.type === "leaf" && n.parentBranchId === branchId && !n.parentLeafId
+    );
+    let bestLeaf: TreeNode | null = null;
+    let bestScore = 0;
+    for (const leaf of candidates) {
+      const s = overlapCoefficient(topic.tags, leaf.tags ?? []);
+      if (s > bestScore) {
+        bestScore = s;
+        bestLeaf = leaf;
+      }
+    }
+    if (bestScore >= SUB_LEAF_THRESHOLD && bestLeaf) {
+      parentLeafId = bestLeaf.id;
+    }
+  }
+
   seq += 1;
   return {
     id: `topic-${Date.now()}-${seq}`,
@@ -82,6 +104,7 @@ export function topicToNode(
     tags: topic.tags,
     source,
     parentBranchId: branchId,
+    parentLeafId,
     similarity,
     createdAt: new Date().toISOString(),
   };
