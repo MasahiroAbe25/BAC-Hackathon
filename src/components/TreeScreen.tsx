@@ -38,6 +38,7 @@ export default function TreeScreen({ diagnosis }: Props) {
   const [tab, setTab] = useState<"mining" | "ken">("mining");
   const [freshIds, setFreshIds] = useState<Set<string>>(new Set());
   const isMobile = useIsMobile();
+  const isKeyboardVisible = useKeyboardVisible(isMobile);
   const [mobileView, setMobileView] = useState<"map" | "panel">("map");
   const [toast, setToast] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState(false);
@@ -236,7 +237,7 @@ export default function TreeScreen({ diagnosis }: Props) {
 
   if (isMobile) {
     return (
-      <div className="tree-screen tree-screen--mobile">
+      <div className={`tree-screen tree-screen--mobile${isKeyboardVisible ? " tree-screen--keyboard" : ""}`}>
         {toast && <div className="toast toast--mobile">{toast}</div>}
         <div
           className="tree-canvas"
@@ -419,6 +420,34 @@ function useIsMobile(): boolean {
     return () => mq.removeEventListener("change", handler);
   }, []);
   return isMobile;
+}
+
+// input/textarea にフォーカスが当たった時に true を返す（モバイルキーボード表示検知）
+function useKeyboardVisible(enabled: boolean): boolean {
+  const [visible, setVisible] = useState(false);
+  useEffect(() => {
+    if (!enabled) return;
+    let timer: ReturnType<typeof setTimeout>;
+    const show = (e: FocusEvent) => {
+      const t = e.target as Element;
+      if (t.tagName === "INPUT" || t.tagName === "TEXTAREA") {
+        clearTimeout(timer);
+        setVisible(true);
+      }
+    };
+    const hide = () => {
+      // フォーカスが別の input に移る場合のチラつきを防ぐため少し遅延
+      timer = setTimeout(() => setVisible(false), 100);
+    };
+    document.addEventListener("focusin", show);
+    document.addEventListener("focusout", hide);
+    return () => {
+      document.removeEventListener("focusin", show);
+      document.removeEventListener("focusout", hide);
+      clearTimeout(timer);
+    };
+  }, [enabled]);
+  return visible;
 }
 
 function buildToast(results: AddResult[]): string {

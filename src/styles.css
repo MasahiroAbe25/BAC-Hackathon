@@ -664,4 +664,10 @@ button {
 
   /* サジェストボタン */
   .suggestion-button { font-size: 11px; padding: 5px 10px; }
+
+  /* キーボード表示中: ボトムナビと操作ボタンを隠してチャット領域を最大化 */
+  .tree-screen--keyboard .mobile-bottom-nav { display: none; }
+  .tree-screen--keyboard .side-panel--mobile { bottom: 0; }
+  .tree-screen--keyboard .tree-canvas { bottom: 0; }
+  .tree-screen--keyboard .side-actions { display: none; }
 }

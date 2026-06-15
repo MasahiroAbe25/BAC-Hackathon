@@ -31,6 +31,9 @@ export const ExportButton = forwardRef<ExportHandle, Props>(
       if (exporting) return;
       setExportingState(true);
       const prevViewport = getViewport();
+      // Edge SVGs that we temporarily resize for the capture (restored in finally)
+      let edgeSvgs: SVGElement[] = [];
+      let edgeSvgSnap: Array<{ left: string; top: string; width: string; height: string; viewBox: string | null }> = [];
 
       try {
         const nodes = getNodes();
@@ -77,6 +80,27 @@ export const ExportButton = forwardRef<ExportHandle, Props>(
 
         const rendererEl = document.querySelector<HTMLElement>(".react-flow__renderer");
         if (!rendererEl) throw new Error("renderer element not found");
+
+        // iOS Safari: foreignObject 内の SVG では overflow:visible が無効なため、
+        // ビューポート外のパスが描画されない (WebKit バグ)。
+        // toPng 前に各エッジ SVG に viewBox + 明示サイズをセットしてパス座標をビューポート内に収める。
+        // left/top を bounds.x/y にずらし viewBox を同じ座標に設定することで
+        // スケール 1:1・座標ズレなしでビューポート境界を包む。
+        edgeSvgs = Array.from(rendererEl.querySelectorAll<SVGElement>(".react-flow__edges svg"));
+        edgeSvgSnap = edgeSvgs.map((svg) => ({
+          left: svg.style.left,
+          top: svg.style.top,
+          width: svg.style.width,
+          height: svg.style.height,
+          viewBox: svg.getAttribute("viewBox"),
+        }));
+        edgeSvgs.forEach((svg) => {
+          svg.style.left = `${bounds.x}px`;
+          svg.style.top = `${bounds.y}px`;
+          svg.style.width = `${bounds.width}px`;
+          svg.style.height = `${bounds.height}px`;
+          svg.setAttribute("viewBox", `${bounds.x} ${bounds.y} ${bounds.width} ${bounds.height}`);
+        });
 
         const PIXEL_RATIO = 2;
         const fullDataUrl = await toPng(rendererEl, {
@@ -130,6 +154,16 @@ export const ExportButton = forwardRef<ExportHandle, Props>(
         console.error("Export failed:", err);
         onError?.("📷 画像の書き出しに失敗しました。もう一度お試しください。");
       } finally {
+        // エッジ SVG のサイズ・位置・viewBox を元に戻す
+        edgeSvgs.forEach((svg, i) => {
+          svg.style.left = edgeSvgSnap[i].left;
+          svg.style.top = edgeSvgSnap[i].top;
+          svg.style.width = edgeSvgSnap[i].width;
+          svg.style.height = edgeSvgSnap[i].height;
+          const vb = edgeSvgSnap[i].viewBox;
+          if (vb !== null) svg.setAttribute("viewBox", vb);
+          else svg.removeAttribute("viewBox");
+        });
         setViewport(prevViewport, { duration: 300 });
         setExportingState(false);
       }
