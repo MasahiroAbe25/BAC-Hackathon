@@ -34,7 +34,7 @@ interface Props {
 export default function TreeScreen({ diagnosis }: Props) {
   const sizesRef = useRef<LayoutSizes>({});
   const getSizes = useCallback((): LayoutSizes => sizesRef.current, []);
-  const { treeNodes, positions, addTopics, resetTree } = useMemoryTree(diagnosis, getSizes);
+  const { treeNodes, positions, addTopics, resetTree, reorganizeLayout } = useMemoryTree(diagnosis, getSizes);
   const [tab, setTab] = useState<"mining" | "ken">("mining");
   const [freshIds, setFreshIds] = useState<Set<string>>(new Set());
   const [toast, setToast] = useState<string | null>(null);
@@ -210,7 +210,16 @@ export default function TreeScreen({ diagnosis }: Props) {
       style: { stroke: "#5b4fe0", strokeWidth: 2.5 },
     }));
     for (const node of treeNodes) {
-      if (node.type === "leaf" && node.parentBranchId) {
+      if (node.type === "leaf" && node.parentLeafId) {
+        // 孫葉: 親葉からのエッジ（細め）
+        edges.push({
+          id: `${node.parentLeafId}-${node.id}`,
+          type: "connector",
+          source: node.parentLeafId,
+          target: node.id,
+          style: { stroke: "#dbd8f8", strokeWidth: 1.5 },
+        });
+      } else if (node.type === "leaf" && node.parentBranchId) {
         edges.push({
           id: `${node.parentBranchId}-${node.id}`,
           type: "connector",
@@ -284,6 +293,9 @@ export default function TreeScreen({ diagnosis }: Props) {
           )}
         </div>
         <div className="side-actions">
+          <button className="ghost-button" onClick={reorganizeLayout} disabled={treeNodes.length === 0}>
+            🗺️ 整える
+          </button>
           <button className="ghost-button" onClick={handleReset}>
             やり直す
           </button>

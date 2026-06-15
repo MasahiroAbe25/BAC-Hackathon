@@ -8,6 +8,7 @@ export interface TreeNode {
   tags?: string[];
   source?: Source;
   parentBranchId?: string | null;
+  parentLeafId?: string | null;
   similarity?: number;
   createdAt: string;
 }
