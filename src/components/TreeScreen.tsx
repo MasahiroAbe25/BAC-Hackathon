@@ -38,7 +38,6 @@ export default function TreeScreen({ diagnosis }: Props) {
   const [tab, setTab] = useState<"mining" | "ken">("mining");
   const [freshIds, setFreshIds] = useState<Set<string>>(new Set());
   const isMobile = useIsMobile();
-  const isKeyboardVisible = useKeyboardVisible(isMobile);
   const [mobileView, setMobileView] = useState<"map" | "panel">("map");
   const [toast, setToast] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState(false);
@@ -235,8 +234,7 @@ export default function TreeScreen({ diagnosis }: Props) {
     return edges;
   }, [diagnosis, treeNodes]);
 
-  // iOS Safari がフォーカス時にドキュメントをスクロールするのを防ぐ。
-  // TreeScreen はフルスクリーンアプリなので html の scroll を封じても問題ない。
+  // iOS がフォーカス時にページをスクロールするのを防ぐ（パネルを動かさないため）
   useEffect(() => {
     if (!isMobile) return;
     const prev = document.documentElement.style.overflow;
@@ -248,7 +246,7 @@ export default function TreeScreen({ diagnosis }: Props) {
 
   if (isMobile) {
     return (
-      <div className={`tree-screen tree-screen--mobile${isKeyboardVisible ? " tree-screen--keyboard" : ""}`}>
+      <div className="tree-screen tree-screen--mobile">
         {toast && <div className="toast toast--mobile">{toast}</div>}
         <div
           className="tree-canvas"
@@ -433,33 +431,6 @@ function useIsMobile(): boolean {
   return isMobile;
 }
 
-// input/textarea にフォーカスが当たった時に true を返す（モバイルキーボード表示検知）
-function useKeyboardVisible(enabled: boolean): boolean {
-  const [visible, setVisible] = useState(false);
-  useEffect(() => {
-    if (!enabled) return;
-    let timer: ReturnType<typeof setTimeout>;
-    const show = (e: FocusEvent) => {
-      const t = e.target as Element;
-      if (t.tagName === "INPUT" || t.tagName === "TEXTAREA") {
-        clearTimeout(timer);
-        setVisible(true);
-      }
-    };
-    const hide = () => {
-      // フォーカスが別の input に移る場合のチラつきを防ぐため少し遅延
-      timer = setTimeout(() => setVisible(false), 100);
-    };
-    document.addEventListener("focusin", show);
-    document.addEventListener("focusout", hide);
-    return () => {
-      document.removeEventListener("focusin", show);
-      document.removeEventListener("focusout", hide);
-      clearTimeout(timer);
-    };
-  }, [enabled]);
-  return visible;
-}
 
 function buildToast(results: AddResult[]): string {
   const attached = results.filter((result) => result.branchLabel);
