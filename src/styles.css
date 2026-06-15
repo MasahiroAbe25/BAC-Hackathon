@@ -666,7 +666,14 @@ button {
   /* サジェストボタン */
   .suggestion-button { font-size: 11px; padding: 5px 10px; }
 
-  /* side-body のスクロールを封じる：iOS がフォーカス時に内部スクロールするのを防止。
-     chat-log 自身が overflow-y:auto でスクロールするため表示は問題ない。 */
+  /* side-body は常に overflow:hidden にして iOS の内部スクロールを防止。
+     スクロールは chat-log 自身の overflow-y:auto が担う。 */
   .side-panel--mobile .side-body { overflow-y: hidden; }
+
+  /* キーボード表示中: 入力に不要な要素を隠しビューポートを最大活用 */
+  .tree-screen--keyboard .mobile-bottom-nav { display: none; }
+  .tree-screen--keyboard .side-panel--mobile { bottom: 0; }
+  .tree-screen--keyboard .tree-canvas { bottom: 0; }
+  .tree-screen--keyboard .side-actions { display: none; }
+  .tree-screen--keyboard .chat-actions { display: none; }
 }
