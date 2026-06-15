@@ -549,6 +549,12 @@ button {
   z-index: 10;
 }
 
+/* モバイル: トーストをビューポート固定で常に見える位置に表示 */
+.toast--mobile {
+  position: fixed;
+  bottom: 72px; /* ボトムナビ(56px) + 余白 */
+}
+
 /* ---------- side actions bar ---------- */
 .side-actions {
   display: flex;
@@ -584,4 +590,78 @@ button {
 .export-button:disabled {
   background: #c5c2e8;
   cursor: default;
+}
+
+/* ========================================
+   モバイルレスポンシブ (max-width: 767px)
+   ======================================== */
+
+@media (max-width: 767px) {
+  /* ヘッダーコンパクト化 */
+  .app-header { padding: 10px 16px; }
+  .app-tagline { display: none; }
+  .app-logo { font-size: 16px; }
+  .back-button { font-size: 11px; padding: 5px 10px; }
+
+  /* モバイル全画面レイアウト */
+  .tree-screen--mobile {
+    height: calc(100% - 49px);
+    position: relative;
+    overflow: hidden;
+  }
+  .tree-screen--mobile .tree-canvas {
+    position: absolute;
+    inset: 0;
+    bottom: 56px;
+  }
+  .side-panel--mobile {
+    position: absolute;
+    inset: 0;
+    bottom: 56px;
+    width: 100%;
+    z-index: 10;
+  }
+
+  /* side-actionsボタンを折り返し */
+  .side-panel--mobile .side-actions { flex-wrap: wrap; }
+  .side-panel--mobile .side-export-button { width: 100%; }
+
+  /* ボトムナビゲーション */
+  .mobile-bottom-nav {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 56px;
+    display: flex;
+    background: #fff;
+    border-top: 1px solid #ececf4;
+    z-index: 100;
+  }
+  .mobile-nav-btn {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    background: none;
+    border: none;
+    color: var(--text-sub);
+    font-size: 10px;
+    font-weight: 600;
+    padding: 6px;
+    transition: color 0.15s ease;
+    cursor: pointer;
+  }
+  .mobile-nav-btn.active { color: var(--primary); }
+  .mobile-nav-icon { font-size: 20px; line-height: 1; }
+  .mobile-nav-label { line-height: 1; }
+
+  /* セレクト画面 */
+  .diagnosis-grid { grid-template-columns: 1fr; }
+  .select-screen { padding: 24px 16px 80px; }
+
+  /* サジェストボタン */
+  .suggestion-button { font-size: 11px; padding: 5px 10px; }
 }

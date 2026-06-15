@@ -12,12 +12,13 @@ interface Props {
   nodeSizes: Map<string, NodeSize>;
   title: string;
   onExportingChange?: (exporting: boolean) => void;
+  onError?: (message: string) => void;
 }
 
 // Headless component — must render inside <ReactFlow> to access useReactFlow().
 // UI lives in the side panel; call exportImage() via a forwarded ref.
 export const ExportButton = forwardRef<ExportHandle, Props>(
-  function ExportButton({ nodeSizes, title, onExportingChange }, ref) {
+  function ExportButton({ nodeSizes, title, onExportingChange, onError }, ref) {
     const { getNodes, getViewport, fitBounds, setViewport } = useReactFlow();
     const [exporting, setExporting] = useState(false);
 
@@ -81,12 +82,16 @@ export const ExportButton = forwardRef<ExportHandle, Props>(
         const fullDataUrl = await toPng(rendererEl, {
           pixelRatio: PIXEL_RATIO,
           backgroundColor: "#fafafc",
-          // パネルとコントロールをキャプチャから除外
+          // パネル・コントロール・背景ドットを除外
+          // Background の SVG は fitBounds 直後に NaN 属性を持つことがあり、
+          // 不正な SVG になって img.onerror が発火するため除外する
           filter: (node) => {
-            if (!(node instanceof HTMLElement)) return true;
+            const el = node as Element;
+            if (typeof el.classList === "undefined") return true;
             return (
-              !node.classList.contains("react-flow__panel") &&
-              !node.classList.contains("react-flow__controls")
+              !el.classList.contains("react-flow__panel") &&
+              !el.classList.contains("react-flow__controls") &&
+              !el.classList.contains("react-flow__background")
             );
           },
         });
@@ -96,8 +101,9 @@ export const ExportButton = forwardRef<ExportHandle, Props>(
         // フルキャプチャからコンテンツ領域だけをクロップ
         const img = new Image();
         img.src = fullDataUrl;
-        await new Promise<void>((r) => {
-          img.onload = () => r();
+        await new Promise<void>((resolve, reject) => {
+          img.onload = () => resolve();
+          img.onerror = () => reject(new Error("image load failed"));
         });
 
         const cropCanvas = document.createElement("canvas");
@@ -122,6 +128,7 @@ export const ExportButton = forwardRef<ExportHandle, Props>(
         a.click();
       } catch (err) {
         console.error("Export failed:", err);
+        onError?.("📷 画像の書き出しに失敗しました。もう一度お試しください。");
       } finally {
         setViewport(prevViewport, { duration: 300 });
         setExportingState(false);

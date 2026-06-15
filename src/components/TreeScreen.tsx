@@ -37,6 +37,8 @@ export default function TreeScreen({ diagnosis }: Props) {
   const { treeNodes, positions, addTopics, resetTree, reorganizeLayout } = useMemoryTree(diagnosis, getSizes);
   const [tab, setTab] = useState<"mining" | "ken">("mining");
   const [freshIds, setFreshIds] = useState<Set<string>>(new Set());
+  const isMobile = useIsMobile();
+  const [mobileView, setMobileView] = useState<"map" | "panel">("map");
   const [toast, setToast] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState(false);
   const exportRef = useRef<ExportHandle>(null);
@@ -232,6 +234,102 @@ export default function TreeScreen({ diagnosis }: Props) {
     return edges;
   }, [diagnosis, treeNodes]);
 
+  if (isMobile) {
+    return (
+      <div className="tree-screen tree-screen--mobile">
+        {toast && <div className="toast toast--mobile">{toast}</div>}
+        <div
+          className="tree-canvas"
+          ref={canvasRef}
+          style={mobileView !== "map" ? { visibility: "hidden", pointerEvents: "none" } : undefined}
+        >
+          <ReactFlow
+            nodes={flowNodes}
+            edges={flowEdges}
+            nodeTypes={nodeTypes}
+            edgeTypes={edgeTypes}
+            fitView
+            fitViewOptions={{ padding: 0.3 }}
+            proOptions={{ hideAttribution: true }}
+            nodesConnectable={false}
+            elementsSelectable={false}
+          >
+            <Background color="#e3e1f2" gap={24} />
+            <Controls showInteractive={false} />
+            <ExportButton
+              ref={exportRef}
+              nodeSizes={nodeSizes}
+              title={diagnosis.title}
+              onExportingChange={setIsExporting}
+              onError={setToast}
+            />
+          </ReactFlow>
+        </div>
+        <aside
+          className="side-panel side-panel--mobile"
+          style={mobileView !== "panel" ? { visibility: "hidden", pointerEvents: "none" } : undefined}
+        >
+          <div className="side-tabs">
+            <button
+              className={`side-tab${tab === "mining" ? " active" : ""}`}
+              onClick={() => setTab("mining")}
+            >
+              ✍️ 自分で書く
+            </button>
+            <button
+              className={`side-tab${tab === "ken" ? " active" : ""}`}
+              onClick={() => setTab("ken")}
+            >
+              💬 Kenと話す
+            </button>
+          </div>
+          <div className="side-body">
+            {tab === "mining" ? (
+              <MiningPanel onTopics={(t) => handleTopics(t, "mining")} />
+            ) : (
+              <KenChatPanel
+                diagnosis={diagnosis}
+                treeNodes={treeNodes}
+                onTopics={(t) => handleTopics(t, "ken_dialogue")}
+              />
+            )}
+          </div>
+          <div className="side-actions">
+            <button className="ghost-button" onClick={reorganizeLayout} disabled={treeNodes.length === 0}>
+              🗺️ 整える
+            </button>
+            <button className="ghost-button" onClick={handleReset}>
+              やり直す
+            </button>
+            <button
+              className="primary-button side-export-button"
+              onClick={() => exportRef.current?.exportImage()}
+              disabled={isExporting}
+            >
+              {isExporting ? "書き出し中…" : "📷 画像を保存"}
+            </button>
+          </div>
+        </aside>
+        <nav className="mobile-bottom-nav">
+          <button
+            className={`mobile-nav-btn${mobileView === "map" ? " active" : ""}`}
+            onClick={() => setMobileView("map")}
+          >
+            <span className="mobile-nav-icon">🗺️</span>
+            <span className="mobile-nav-label">マップ</span>
+          </button>
+          <button
+            className={`mobile-nav-btn${mobileView === "panel" ? " active" : ""}`}
+            onClick={() => setMobileView("panel")}
+          >
+            <span className="mobile-nav-icon">💬</span>
+            <span className="mobile-nav-label">チャット</span>
+          </button>
+        </nav>
+      </div>
+    );
+  }
+
   return (
     <div className="tree-screen" ref={screenRef}>
       <div className="tree-canvas" ref={canvasRef}>
@@ -310,6 +408,17 @@ export default function TreeScreen({ diagnosis }: Props) {
       </aside>
     </div>
   );
+}
+
+function useIsMobile(): boolean {
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768);
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 767px)");
+    const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches);
+    mq.addEventListener("change", handler);
+    return () => mq.removeEventListener("change", handler);
+  }, []);
+  return isMobile;
 }
 
 function buildToast(results: AddResult[]): string {
