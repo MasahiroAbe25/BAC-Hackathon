@@ -232,6 +232,7 @@ button {
 
 .side-body {
   flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   padding: 16px;
@@ -667,7 +668,17 @@ button {
 
   /* キーボード表示中: ボトムナビと操作ボタンを隠してチャット領域を最大化 */
   .tree-screen--keyboard .mobile-bottom-nav { display: none; }
-  .tree-screen--keyboard .side-panel--mobile { bottom: 0; }
+  /* position: fixed でビジュアルビューポート(キーボード上端)に固定し、
+     iOS がドキュメントをスクロールしても位置がズレないようにする */
+  .tree-screen--keyboard .side-panel--mobile {
+    position: fixed;
+    top: 49px;
+    left: 0;
+    right: 0;
+    bottom: 0;
+  }
   .tree-screen--keyboard .tree-canvas { bottom: 0; }
   .tree-screen--keyboard .side-actions { display: none; }
+  /* side-body のスクロールを封じ、chat-log の内部スクロールに任せる */
+  .tree-screen--keyboard .side-body { overflow-y: hidden; }
 }

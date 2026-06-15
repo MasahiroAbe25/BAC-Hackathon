@@ -235,6 +235,17 @@ export default function TreeScreen({ diagnosis }: Props) {
     return edges;
   }, [diagnosis, treeNodes]);
 
+  // iOS Safari がフォーカス時にドキュメントをスクロールするのを防ぐ。
+  // TreeScreen はフルスクリーンアプリなので html の scroll を封じても問題ない。
+  useEffect(() => {
+    if (!isMobile) return;
+    const prev = document.documentElement.style.overflow;
+    document.documentElement.style.overflow = "hidden";
+    return () => {
+      document.documentElement.style.overflow = prev;
+    };
+  }, [isMobile]);
+
   if (isMobile) {
     return (
       <div className={`tree-screen tree-screen--mobile${isKeyboardVisible ? " tree-screen--keyboard" : ""}`}>
