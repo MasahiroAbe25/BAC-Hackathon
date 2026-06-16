@@ -469,7 +469,13 @@ function useIsMobile(): boolean {
 function useKeyboardVisible(enabled: boolean): boolean {
   const [visible, setVisible] = useState(false);
   useEffect(() => {
-    if (!enabled) return;
+    // enabled が false になった時点でキーボード非表示にリセットする。
+    // リセットしないと、デスクトップ幅に戻った後も visible=true が残り
+    // tree-screen--keyboard クラスが永続してレイアウトが壊れる。
+    if (!enabled) {
+      setVisible(false);
+      return;
+    }
     const vv = window.visualViewport;
     if (!vv) return;
     let maxHeight = vv.height;
@@ -478,8 +484,22 @@ function useKeyboardVisible(enabled: boolean): boolean {
       // キーボード高さが 150px 超 = キーボード表示中と判定
       setVisible(maxHeight - vv.height > 150);
     };
+    // 画面回転時は maxHeight を現在の高さにリセットする。
+    // リセットしないと portrait→landscape 回転後に maxHeight がポートレート高さのまま
+    // 残り、キーボード非表示でも visible=true になり続ける。
+    // rAF を挟むことで回転後の viewport 高さが確定してから更新する。
+    const onOrientationChange = () => {
+      requestAnimationFrame(() => {
+        maxHeight = vv.height;
+        setVisible(false);
+      });
+    };
     vv.addEventListener("resize", handler);
-    return () => vv.removeEventListener("resize", handler);
+    window.addEventListener("orientationchange", onOrientationChange);
+    return () => {
+      vv.removeEventListener("resize", handler);
+      window.removeEventListener("orientationchange", onOrientationChange);
+    };
   }, [enabled]);
   return visible;
 }

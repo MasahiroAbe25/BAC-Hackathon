@@ -137,7 +137,7 @@ export const ExportButton = forwardRef<ExportHandle, Props>(
           if (nodeEl) {
             const w = nodeEl.offsetWidth;
             const h = nodeEl.offsetHeight;
-            if (w > 0 || h > 0) {
+            if (w > 0 && h > 0) {
               exportNodeSizes.set(node.id, { width: w, height: h });
             }
           }
@@ -259,6 +259,8 @@ export const ExportButton = forwardRef<ExportHandle, Props>(
             return;
           } catch (err) {
             if ((err as DOMException).name === "AbortError") return;
+            // AbortError 以外 (NotAllowedError 等) はフォールバックのダウンロードへ
+            console.warn("navigator.share failed, falling back to download:", err);
           }
         }
 
