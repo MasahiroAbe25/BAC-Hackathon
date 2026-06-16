@@ -191,10 +191,36 @@ export const ExportButton = forwardRef<ExportHandle, Props>(
           ctx.stroke();
         }
 
+        const filename = `${title}-poster.png`;
+
+        // Canvas → Blob に変換（Data URL より省メモリ・ファイル名が正しく扱われる）
+        const blob = await new Promise<Blob>((res, rej) =>
+          cropCanvas.toBlob((b) => (b ? res(b) : rej(new Error("toBlob failed"))), "image/png")
+        );
+
+        // iOS 15+ / Android Chrome: Web Share API でシェアシートを表示
+        // → 「写真に保存」を選ぶと写真アプリへ直接保存できる
+        const shareFile = new File([blob], filename, { type: "image/png" });
+        if (
+          typeof navigator.canShare === "function" &&
+          navigator.canShare({ files: [shareFile] })
+        ) {
+          try {
+            await navigator.share({ files: [shareFile], title });
+            return; // シェアシートで処理完了
+          } catch (err) {
+            if ((err as DOMException).name === "AbortError") return; // キャンセルはエラーでない
+            // その他のエラーはフォールバックへ
+          }
+        }
+
+        // デスクトップ / Web Share 非対応環境: Blob URL でダウンロード
+        const blobUrl = URL.createObjectURL(blob);
         const a = document.createElement("a");
-        a.href = cropCanvas.toDataURL("image/png");
-        a.download = `${title}-poster.png`;
+        a.href = blobUrl;
+        a.download = filename;
         a.click();
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
       } catch (err) {
         console.error("Export failed:", err);
         onError?.("📷 画像の書き出しに失敗しました。もう一度お試しください。");
