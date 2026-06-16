@@ -663,12 +663,82 @@ button {
   .diagnosis-grid { grid-template-columns: 1fr; }
   .select-screen { padding: 24px 16px 80px; }
 
-  /* サジェストボタン */
-  .suggestion-button { font-size: 11px; padding: 5px 10px; }
-
-  /* side-body は常に overflow:hidden にして iOS の内部スクロールを防止。
-     スクロールは chat-log 自身の overflow-y:auto が担う。 */
+  /* side-body は常に overflow:hidden にして iOS の内部スクロールを防止 */
   .side-panel--mobile .side-body { overflow-y: hidden; }
+
+  /* ---- モバイル向けチャットUI縮小 ---- */
+
+  /* タブ */
+  .side-panel--mobile .side-tab {
+    padding: 8px 6px;
+    font-size: 12px;
+  }
+
+  /* パネル本体の余白を詰める */
+  .side-panel--mobile .side-body {
+    padding: 10px 12px;
+    line-height: 1.5;
+  }
+
+  /* チャットログ */
+  .side-panel--mobile .chat-log {
+    gap: 6px;
+    padding-bottom: 6px;
+  }
+
+  /* チャットバブル */
+  .side-panel--mobile .chat-bubble {
+    font-size: 12px;
+    padding: 7px 10px;
+    line-height: 1.5;
+  }
+
+  /* サジェストボタン */
+  .side-panel--mobile .chat-suggestions {
+    gap: 5px;
+    padding: 5px 0 3px;
+  }
+  .side-panel--mobile .suggestion-button {
+    font-size: 11px;
+    padding: 4px 9px;
+  }
+
+  /* チャット入力欄 */
+  .side-panel--mobile .chat-input-row {
+    gap: 6px;
+    padding-top: 6px;
+  }
+  .side-panel--mobile .chat-input-row input {
+    padding: 7px 12px;
+    font-size: 12px;
+  }
+  .side-panel--mobile .chat-input-row .primary-button {
+    font-size: 12px;
+    padding: 7px 14px;
+  }
+
+  /* ツリーを伸ばすボタン */
+  .side-panel--mobile .chat-actions {
+    margin-top: 5px;
+  }
+  .side-panel--mobile .chat-actions .ghost-button {
+    font-size: 11px;
+    padding: 5px 12px;
+  }
+
+  /* 下部アクションバー（整える・やり直す・画像を保存） */
+  .side-panel--mobile .side-actions {
+    padding: 8px 10px;
+    gap: 6px;
+  }
+  .side-panel--mobile .ghost-button {
+    font-size: 11px;
+    padding: 5px 10px;
+  }
+  .side-panel--mobile .primary-button {
+    font-size: 12px;
+    padding: 8px 14px;
+  }
 
   /* キーボード表示中: 入力に不要な要素を隠しビューポートを最大活用 */
   .tree-screen--keyboard .mobile-bottom-nav { display: none; }
