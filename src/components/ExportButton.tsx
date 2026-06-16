@@ -15,11 +15,33 @@ interface Props {
   onError?: (message: string) => void;
 }
 
+/**
+ * ノード中心(sx,sy)から(tx,ty)方向に向かう直線がノード矩形境界(半幅hw,半高hh)と
+ * 交わる点を返す。エッジのハンドル位置の近似値として使用する。
+ */
+function nodeEdgePoint(
+  sx: number, sy: number,
+  tx: number, ty: number,
+  hw: number, hh: number,
+): { x: number; y: number } {
+  const dx = tx - sx;
+  const dy = ty - sy;
+  const dist = Math.hypot(dx, dy);
+  if (dist < 1) return { x: sx, y: sy };
+  const ux = dx / dist;
+  const uy = dy / dist;
+  const t = Math.min(
+    Math.abs(ux) > 1e-9 ? hw / Math.abs(ux) : Infinity,
+    Math.abs(uy) > 1e-9 ? hh / Math.abs(uy) : Infinity,
+  );
+  return { x: sx + ux * t, y: sy + uy * t };
+}
+
 // Headless component — must render inside <ReactFlow> to access useReactFlow().
 // UI lives in the side panel; call exportImage() via a forwarded ref.
 export const ExportButton = forwardRef<ExportHandle, Props>(
   function ExportButton({ nodeSizes, title, onExportingChange, onError }, ref) {
-    const { getNodes, getViewport, fitBounds, setViewport } = useReactFlow();
+    const { getNodes, getEdges, getViewport, fitBounds, setViewport } = useReactFlow();
     const [exporting, setExporting] = useState(false);
 
     const setExportingState = useCallback((val: boolean) => {
@@ -31,9 +53,6 @@ export const ExportButton = forwardRef<ExportHandle, Props>(
       if (exporting) return;
       setExportingState(true);
       const prevViewport = getViewport();
-      // Edge SVGs that we temporarily resize for the capture (restored in finally)
-      let edgeSvgs: SVGElement[] = [];
-      let edgeSvgSnap: Array<{ left: string; top: string; width: string; height: string; viewBox: string | null }> = [];
 
       try {
         const nodes = getNodes();
@@ -81,41 +100,23 @@ export const ExportButton = forwardRef<ExportHandle, Props>(
         const rendererEl = document.querySelector<HTMLElement>(".react-flow__renderer");
         if (!rendererEl) throw new Error("renderer element not found");
 
-        // iOS Safari: foreignObject 内の SVG では overflow:visible が無効なため、
-        // ビューポート外のパスが描画されない (WebKit バグ)。
-        // toPng 前に各エッジ SVG に viewBox + 明示サイズをセットしてパス座標をビューポート内に収める。
-        // left/top を bounds.x/y にずらし viewBox を同じ座標に設定することで
-        // スケール 1:1・座標ズレなしでビューポート境界を包む。
-        edgeSvgs = Array.from(rendererEl.querySelectorAll<SVGElement>(".react-flow__edges svg"));
-        edgeSvgSnap = edgeSvgs.map((svg) => ({
-          left: svg.style.left,
-          top: svg.style.top,
-          width: svg.style.width,
-          height: svg.style.height,
-          viewBox: svg.getAttribute("viewBox"),
-        }));
-        edgeSvgs.forEach((svg) => {
-          svg.style.left = `${bounds.x}px`;
-          svg.style.top = `${bounds.y}px`;
-          svg.style.width = `${bounds.width}px`;
-          svg.style.height = `${bounds.height}px`;
-          svg.setAttribute("viewBox", `${bounds.x} ${bounds.y} ${bounds.width} ${bounds.height}`);
-        });
-
+        // ノードのみキャプチャ（背景色なし・エッジ除外）
+        // iOS Safari では foreignObject 内の SVG で overflow:visible が効かないため
+        // SVG エッジが完全にクリップされる (WebKit バグ)。
+        // エッジは toPng から除外し、Canvas 2D API で後から直接描画して回避する。
         const PIXEL_RATIO = 2;
         const fullDataUrl = await toPng(rendererEl, {
           pixelRatio: PIXEL_RATIO,
-          backgroundColor: "#fafafc",
-          // パネル・コントロール・背景ドットを除外
-          // Background の SVG は fitBounds 直後に NaN 属性を持つことがあり、
-          // 不正な SVG になって img.onerror が発火するため除外する
+          // backgroundColor なし → ノードは各自の CSS 背景色、空白は透明
+          // → エッジをノードの下に描いてから、透明なノード画像を重ねる
           filter: (node) => {
             const el = node as Element;
             if (typeof el.classList === "undefined") return true;
             return (
               !el.classList.contains("react-flow__panel") &&
               !el.classList.contains("react-flow__controls") &&
-              !el.classList.contains("react-flow__background")
+              !el.classList.contains("react-flow__background") &&
+              !el.classList.contains("react-flow__edges") // Canvas API で描画するため除外
             );
           },
         });
@@ -134,6 +135,46 @@ export const ExportButton = forwardRef<ExportHandle, Props>(
         cropCanvas.width = Math.round(screenWidth * PIXEL_RATIO);
         cropCanvas.height = Math.round(screenHeight * PIXEL_RATIO);
         const ctx = cropCanvas.getContext("2d")!;
+
+        // 1. 背景色で塗りつぶす
+        ctx.fillStyle = "#fafafc";
+        ctx.fillRect(0, 0, cropCanvas.width, cropCanvas.height);
+
+        // 2. エッジをCanvas APIで描画（ノードの下になるよう先に描く）
+        // フロー座標 → クロップキャンバス座標の変換
+        const toCanvasX = (flowX: number) => (flowX * zoom + vx - screenLeft) * PIXEL_RATIO;
+        const toCanvasY = (flowY: number) => (flowY * zoom + vy - screenTop) * PIXEL_RATIO;
+
+        const nodeMap = new Map(nodes.map((n) => [n.id, n]));
+        ctx.lineCap = "round";
+
+        for (const edge of getEdges()) {
+          const srcNode = nodeMap.get(edge.source);
+          const tgtNode = nodeMap.get(edge.target);
+          if (!srcNode || !tgtNode) continue;
+
+          const srcSize = nodeSizes.get(edge.source);
+          const tgtSize = nodeSizes.get(edge.target);
+          if (!srcSize || !tgtSize) continue;
+
+          const sx = srcNode.position.x;
+          const sy = srcNode.position.y;
+          const tx = tgtNode.position.x;
+          const ty = tgtNode.position.y;
+
+          // ノード境界上の開始・終了点を算出
+          const p1 = nodeEdgePoint(sx, sy, tx, ty, srcSize.width / 2, srcSize.height / 2);
+          const p2 = nodeEdgePoint(tx, ty, sx, sy, tgtSize.width / 2, tgtSize.height / 2);
+
+          ctx.beginPath();
+          ctx.strokeStyle = (edge.style?.stroke as string) ?? "#c9c4f7";
+          ctx.lineWidth = ((edge.style?.strokeWidth as number) ?? 2) * zoom * PIXEL_RATIO;
+          ctx.moveTo(toCanvasX(p1.x), toCanvasY(p1.y));
+          ctx.lineTo(toCanvasX(p2.x), toCanvasY(p2.y));
+          ctx.stroke();
+        }
+
+        // 3. ノード画像を上から重ねる（透明な空白部分からエッジが透けて見える）
         ctx.drawImage(
           img,
           screenLeft * PIXEL_RATIO,
@@ -143,7 +184,7 @@ export const ExportButton = forwardRef<ExportHandle, Props>(
           0,
           0,
           cropCanvas.width,
-          cropCanvas.height
+          cropCanvas.height,
         );
 
         const a = document.createElement("a");
@@ -154,20 +195,10 @@ export const ExportButton = forwardRef<ExportHandle, Props>(
         console.error("Export failed:", err);
         onError?.("📷 画像の書き出しに失敗しました。もう一度お試しください。");
       } finally {
-        // エッジ SVG のサイズ・位置・viewBox を元に戻す
-        edgeSvgs.forEach((svg, i) => {
-          svg.style.left = edgeSvgSnap[i].left;
-          svg.style.top = edgeSvgSnap[i].top;
-          svg.style.width = edgeSvgSnap[i].width;
-          svg.style.height = edgeSvgSnap[i].height;
-          const vb = edgeSvgSnap[i].viewBox;
-          if (vb !== null) svg.setAttribute("viewBox", vb);
-          else svg.removeAttribute("viewBox");
-        });
         setViewport(prevViewport, { duration: 300 });
         setExportingState(false);
       }
-    }, [exporting, setExportingState, getNodes, getViewport, fitBounds, setViewport, nodeSizes, title]);
+    }, [exporting, setExportingState, getNodes, getEdges, getViewport, fitBounds, setViewport, nodeSizes, title]);
 
     useImperativeHandle(ref, () => ({
       isExporting: () => exporting,
