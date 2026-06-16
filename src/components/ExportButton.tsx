@@ -54,6 +54,9 @@ export const ExportButton = forwardRef<ExportHandle, Props>(
       setExportingState(true);
       const prevViewport = getViewport();
 
+      // エクスポート中に注入したスタイルを確実に削除するためのリスト
+      const injectedStyles: HTMLStyleElement[] = [];
+
       try {
         const nodes = getNodes();
 
@@ -79,12 +82,42 @@ export const ExportButton = forwardRef<ExportHandle, Props>(
           height: maxY - minY + PADDING * 2,
         };
 
+        // モバイルのパネルビューでは tree-canvas が display:none になっている。
+        // fitBounds の座標計算とノードサイズの再計測のため、一時的に display:block にする。
+        // visibility:hidden で不可視のままユーザーには見えない。
+        const canvasShowStyle = document.createElement("style");
+        canvasShowStyle.textContent =
+          ".tree-canvas { display: block !important; visibility: hidden !important; }";
+        document.head.appendChild(canvasShowStyle);
+        injectedStyles.push(canvasShowStyle);
+
+        // ResizeObserver が新しいサイズを検知するまで待つ
+        await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
+
         // ビューポートをコンテンツに合わせる（アニメーションなし）
         await fitBounds(bounds, { duration: 0 });
+
+        // iOS Safari の foreignObject では Google Fonts が適用されず
+        // システムフォントにフォールバックする WebKit の制約がある。
+        // エクスポート時はシステムフォントを明示的に指定し、
+        // 画面表示と同じフォントで foreignObject がレンダリングされるようにする。
+        const exportFontStyle = document.createElement("style");
+        exportFontStyle.textContent = `
+          .react-flow__renderer .node-center,
+          .react-flow__renderer .node-branch,
+          .react-flow__renderer .node-leaf,
+          .react-flow__renderer .node-floating,
+          .react-flow__renderer .category {
+            font-family: "Hiragino Maru Gothic ProN", "Hiragino Sans",
+                         "Yu Gothic", Meiryo, sans-serif !important;
+          }
+        `;
+        document.head.appendChild(exportFontStyle);
+        injectedStyles.push(exportFontStyle);
+
+        // フォント切り替え後のレイアウト確定を待つ
         await document.fonts.ready;
-        await new Promise<void>((r) =>
-          requestAnimationFrame(() => requestAnimationFrame(() => r()))
-        );
+        await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
 
         // fitBounds 後のビューポートからスクリーン座標を計算
         const { x: vx, y: vy, zoom } = getViewport();
@@ -92,6 +125,23 @@ export const ExportButton = forwardRef<ExportHandle, Props>(
         const screenTop = bounds.y * zoom + vy;
         const screenWidth = bounds.width * zoom;
         const screenHeight = bounds.height * zoom;
+
+        // システムフォント適用後のノードサイズを再計測する。
+        // システムフォントは文字幅が広いため、ノードの実サイズが変わる可能性がある。
+        // エッジの端点をノード境界に正確に合わせるために必要。
+        const exportNodeSizes = new Map<string, NodeSize>(nodeSizes);
+        for (const node of getNodes()) {
+          const nodeEl = document.querySelector<HTMLElement>(
+            `.react-flow__node[data-id="${node.id}"]`
+          );
+          if (nodeEl) {
+            const w = nodeEl.offsetWidth;
+            const h = nodeEl.offsetHeight;
+            if (w > 0 || h > 0) {
+              exportNodeSizes.set(node.id, { width: w, height: h });
+            }
+          }
+        }
 
         // floating-drift アニメーションを停止してブレを防ぐ
         const driftEls = document.querySelectorAll<HTMLElement>(".floating-drift");
@@ -103,15 +153,12 @@ export const ExportButton = forwardRef<ExportHandle, Props>(
         // ノードをキャプチャ（エッジは Canvas API で別途描画）
         // iOS Safari では foreignObject 内の SVG で overflow:visible が効かないため
         // SVG エッジが完全にクリップされる (WebKit バグ)。
-        // エッジは react-flow__edges を filter で除外し、Canvas 2D API で後から直接描画する。
-        //
-        // backgroundColor は省略しない。
-        // 透明背景だと iOS Safari の foreignObject でサブピクセルアンチエイリアシングが
-        // 変わりフォント描画幅が変化するため、テキストが折り返されてしまう。
+        // システムフォントを強制しているため @font-face 埋め込みは不要（skipFonts: true）。
         const PIXEL_RATIO = 2;
         const fullDataUrl = await toPng(rendererEl, {
           pixelRatio: PIXEL_RATIO,
           backgroundColor: "#fafafc",
+          skipFonts: true,
           filter: (node) => {
             const el = node as Element;
             if (typeof el.classList === "undefined") return true;
@@ -119,12 +166,17 @@ export const ExportButton = forwardRef<ExportHandle, Props>(
               !el.classList.contains("react-flow__panel") &&
               !el.classList.contains("react-flow__controls") &&
               !el.classList.contains("react-flow__background") &&
-              !el.classList.contains("react-flow__edges") // Canvas API で描画するため除外
+              !el.classList.contains("react-flow__edges")
             );
           },
         });
 
+        // スタイルと animation を元に戻す
         driftEls.forEach((el) => (el.style.animationPlayState = ""));
+        injectedStyles.forEach((s) => {
+          if (document.head.contains(s)) document.head.removeChild(s);
+        });
+        injectedStyles.length = 0;
 
         // フルキャプチャからコンテンツ領域だけをクロップ
         const img = new Image();
@@ -149,8 +201,6 @@ export const ExportButton = forwardRef<ExportHandle, Props>(
         ctx.fillRect(0, 0, cropCanvas.width, cropCanvas.height);
 
         // 2. ノード画像を描画
-        // toPng に backgroundColor を渡しているため、ノード間の空白も白で埋まる。
-        // エッジはこの後に描画して上に重ねる。
         ctx.drawImage(
           img,
           screenLeft * PIXEL_RATIO,
@@ -164,15 +214,14 @@ export const ExportButton = forwardRef<ExportHandle, Props>(
         );
 
         // 3. エッジをCanvas APIでノード画像の上に描画
-        // ノードの枠線付近でエッジが重なるが細い線のため視覚的影響は小さい。
         ctx.lineCap = "round";
         for (const edge of getEdges()) {
           const srcNode = nodeMap.get(edge.source);
           const tgtNode = nodeMap.get(edge.target);
           if (!srcNode || !tgtNode) continue;
 
-          const srcSize = nodeSizes.get(edge.source);
-          const tgtSize = nodeSizes.get(edge.target);
+          const srcSize = exportNodeSizes.get(edge.source);
+          const tgtSize = exportNodeSizes.get(edge.target);
           if (!srcSize || !tgtSize) continue;
 
           const sx = srcNode.position.x;
@@ -207,10 +256,9 @@ export const ExportButton = forwardRef<ExportHandle, Props>(
         ) {
           try {
             await navigator.share({ files: [shareFile], title });
-            return; // シェアシートで処理完了
+            return;
           } catch (err) {
-            if ((err as DOMException).name === "AbortError") return; // キャンセルはエラーでない
-            // その他のエラーはフォールバックへ
+            if ((err as DOMException).name === "AbortError") return;
           }
         }
 
@@ -225,10 +273,14 @@ export const ExportButton = forwardRef<ExportHandle, Props>(
         console.error("Export failed:", err);
         onError?.("📷 画像の書き出しに失敗しました。もう一度お試しください。");
       } finally {
+        // エラー時も含め、注入したスタイルを必ず削除する
+        injectedStyles.forEach((s) => {
+          if (document.head.contains(s)) document.head.removeChild(s);
+        });
         setViewport(prevViewport, { duration: 300 });
         setExportingState(false);
       }
-    }, [exporting, setExportingState, getNodes, getEdges, getViewport, fitBounds, setViewport, nodeSizes, title]);
+    }, [exporting, setExportingState, getNodes, getEdges, getViewport, fitBounds, setViewport, nodeSizes, title, onError]);
 
     useImperativeHandle(ref, () => ({
       isExporting: () => exporting,
