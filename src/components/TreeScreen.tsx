@@ -256,6 +256,26 @@ export default function TreeScreen({ diagnosis }: Props) {
     };
   }, [isMobile]);
 
+  // PWA (standalone) モード対応: キーボード出現時に visual viewport の高さを CSS 変数へ反映。
+  // Safari ブラウザはキーボードでレイアウト viewport を自動縮小するが、
+  // PWA では layout viewport はそのままのため --vvh で補正する。
+  useEffect(() => {
+    if (!isMobile) return;
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const update = () => {
+      document.documentElement.style.setProperty("--vvh", `${vv.height}px`);
+    };
+    update();
+    vv.addEventListener("resize", update);
+    vv.addEventListener("scroll", update);
+    return () => {
+      vv.removeEventListener("resize", update);
+      vv.removeEventListener("scroll", update);
+      document.documentElement.style.removeProperty("--vvh");
+    };
+  }, [isMobile]);
+
   if (isMobile) {
     return (
       <div className={`tree-screen tree-screen--mobile${isKeyboardVisible ? " tree-screen--keyboard" : ""}`}>

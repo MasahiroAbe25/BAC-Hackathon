@@ -605,8 +605,11 @@ button {
   .back-button { font-size: 11px; padding: 5px 10px; }
 
   /* モバイル全画面レイアウト */
+  /* --vvh は visualViewport.height から JS でセット。
+     PWA モードではキーボード出現時もレイアウト viewport が縮小しないため
+     visual viewport 高さで補正する。Safari ブラウザ使用時は通常の 100% と同値になる。 */
   .tree-screen--mobile {
-    height: calc(100% - 49px);
+    height: calc(var(--vvh, 100%) - 49px);
     position: relative;
     overflow: hidden;
   }
