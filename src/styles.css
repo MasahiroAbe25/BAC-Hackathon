@@ -719,10 +719,12 @@ button {
   .side-panel--mobile .chat-input-row input {
     padding: 7px 12px;
     font-size: 16px; /* iOS Safari: 16px未満だとフォーカス時に自動ズームが発生する */
+    min-width: 0; /* flex内でブラウザが設定するintrinsic最小幅(プレースホルダー幅)を上書き */
   }
   .side-panel--mobile .chat-input-row .primary-button {
     font-size: 12px;
     padding: 7px 14px;
+    flex-shrink: 0; /* 送るボタンが圧縮されないよう固定 */
   }
 
   /* ツリーを伸ばすボタン */
