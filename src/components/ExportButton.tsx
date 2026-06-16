@@ -100,15 +100,18 @@ export const ExportButton = forwardRef<ExportHandle, Props>(
         const rendererEl = document.querySelector<HTMLElement>(".react-flow__renderer");
         if (!rendererEl) throw new Error("renderer element not found");
 
-        // ノードのみキャプチャ（背景色なし・エッジ除外）
+        // ノードをキャプチャ（エッジは Canvas API で別途描画）
         // iOS Safari では foreignObject 内の SVG で overflow:visible が効かないため
         // SVG エッジが完全にクリップされる (WebKit バグ)。
-        // エッジは toPng から除外し、Canvas 2D API で後から直接描画して回避する。
+        // エッジは react-flow__edges を filter で除外し、Canvas 2D API で後から直接描画する。
+        //
+        // backgroundColor は省略しない。
+        // 透明背景だと iOS Safari の foreignObject でサブピクセルアンチエイリアシングが
+        // 変わりフォント描画幅が変化するため、テキストが折り返されてしまう。
         const PIXEL_RATIO = 2;
         const fullDataUrl = await toPng(rendererEl, {
           pixelRatio: PIXEL_RATIO,
-          // backgroundColor なし → ノードは各自の CSS 背景色、空白は透明
-          // → エッジをノードの下に描いてから、透明なノード画像を重ねる
+          backgroundColor: "#fafafc",
           filter: (node) => {
             const el = node as Element;
             if (typeof el.classList === "undefined") return true;
@@ -136,18 +139,33 @@ export const ExportButton = forwardRef<ExportHandle, Props>(
         cropCanvas.height = Math.round(screenHeight * PIXEL_RATIO);
         const ctx = cropCanvas.getContext("2d")!;
 
+        // フロー座標 → クロップキャンバス座標の変換
+        const toCanvasX = (flowX: number) => (flowX * zoom + vx - screenLeft) * PIXEL_RATIO;
+        const toCanvasY = (flowY: number) => (flowY * zoom + vy - screenTop) * PIXEL_RATIO;
+        const nodeMap = new Map(nodes.map((n) => [n.id, n]));
+
         // 1. 背景色で塗りつぶす
         ctx.fillStyle = "#fafafc";
         ctx.fillRect(0, 0, cropCanvas.width, cropCanvas.height);
 
-        // 2. エッジをCanvas APIで描画（ノードの下になるよう先に描く）
-        // フロー座標 → クロップキャンバス座標の変換
-        const toCanvasX = (flowX: number) => (flowX * zoom + vx - screenLeft) * PIXEL_RATIO;
-        const toCanvasY = (flowY: number) => (flowY * zoom + vy - screenTop) * PIXEL_RATIO;
+        // 2. ノード画像を描画
+        // toPng に backgroundColor を渡しているため、ノード間の空白も白で埋まる。
+        // エッジはこの後に描画して上に重ねる。
+        ctx.drawImage(
+          img,
+          screenLeft * PIXEL_RATIO,
+          screenTop * PIXEL_RATIO,
+          screenWidth * PIXEL_RATIO,
+          screenHeight * PIXEL_RATIO,
+          0,
+          0,
+          cropCanvas.width,
+          cropCanvas.height,
+        );
 
-        const nodeMap = new Map(nodes.map((n) => [n.id, n]));
+        // 3. エッジをCanvas APIでノード画像の上に描画
+        // ノードの枠線付近でエッジが重なるが細い線のため視覚的影響は小さい。
         ctx.lineCap = "round";
-
         for (const edge of getEdges()) {
           const srcNode = nodeMap.get(edge.source);
           const tgtNode = nodeMap.get(edge.target);
@@ -162,7 +180,6 @@ export const ExportButton = forwardRef<ExportHandle, Props>(
           const tx = tgtNode.position.x;
           const ty = tgtNode.position.y;
 
-          // ノード境界上の開始・終了点を算出
           const p1 = nodeEdgePoint(sx, sy, tx, ty, srcSize.width / 2, srcSize.height / 2);
           const p2 = nodeEdgePoint(tx, ty, sx, sy, tgtSize.width / 2, tgtSize.height / 2);
 
@@ -173,19 +190,6 @@ export const ExportButton = forwardRef<ExportHandle, Props>(
           ctx.lineTo(toCanvasX(p2.x), toCanvasY(p2.y));
           ctx.stroke();
         }
-
-        // 3. ノード画像を上から重ねる（透明な空白部分からエッジが透けて見える）
-        ctx.drawImage(
-          img,
-          screenLeft * PIXEL_RATIO,
-          screenTop * PIXEL_RATIO,
-          screenWidth * PIXEL_RATIO,
-          screenHeight * PIXEL_RATIO,
-          0,
-          0,
-          cropCanvas.width,
-          cropCanvas.height,
-        );
 
         const a = document.createElement("a");
         a.href = cropCanvas.toDataURL("image/png");
