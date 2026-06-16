@@ -60,13 +60,18 @@ export interface KenReply {
 
 /** NEXT:[...] 行をテキストから抽出し、{text, suggestions} に分割する */
 function splitSuggestions(raw: string): { text: string; suggestions: string[] } {
-  const match = raw.match(/\nNEXT:(\[.*?\])\s*$/s);
-  if (!match) return { text: raw.trim(), suggestions: [] };
+  // "NEXT: [...]" のように : と [ の間にスペースが入るケースも許容する
+  const match = raw.match(/\nNEXT:\s*(\[.*?\])\s*$/s);
+  if (!match) {
+    // マッチしなくても NEXT: 行がチャットに露出しないよう除去する
+    const cleaned = raw.replace(/\nNEXT:[\s\S]*$/, "").trim();
+    return { text: cleaned || raw.trim(), suggestions: [] };
+  }
   const text = raw.slice(0, match.index).trim();
   try {
-    const suggestions = JSON.parse(match[1]);
-    if (Array.isArray(suggestions) && suggestions.every((s) => typeof s === "string")) {
-      return { text, suggestions };
+    const parsed = JSON.parse(match[1]);
+    if (Array.isArray(parsed) && parsed.every((s) => typeof s === "string")) {
+      return { text, suggestions: parsed };
     }
   } catch {
     // パース失敗時は suggestions なしで返す

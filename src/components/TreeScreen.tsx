@@ -37,6 +37,9 @@ export default function TreeScreen({ diagnosis }: Props) {
   const { treeNodes, positions, addTopics, resetTree, reorganizeLayout } = useMemoryTree(diagnosis, getSizes);
   const [tab, setTab] = useState<"mining" | "ken">("mining");
   const [freshIds, setFreshIds] = useState<Set<string>>(new Set());
+  const isMobile = useIsMobile();
+  const isKeyboardVisible = useKeyboardVisible(isMobile);
+  const [mobileView, setMobileView] = useState<"map" | "panel">("map");
   const [toast, setToast] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState(false);
   const exportRef = useRef<ExportHandle>(null);
@@ -232,6 +235,143 @@ export default function TreeScreen({ diagnosis }: Props) {
     return edges;
   }, [diagnosis, treeNodes]);
 
+  // iOS がフォーカス時にページをスクロールするのを防ぐ
+  useEffect(() => {
+    if (!isMobile) return;
+    const htmlPrev = document.documentElement.style.overflow;
+    const bodyPrev = document.body.style.overflow;
+    document.documentElement.style.overflow = "hidden";
+    document.body.style.overflow = "hidden"; // html だけでは iOS がスクロールするケースがある
+
+    // overflow:hidden をすり抜けたスクロールをその場でリセット
+    const resetScroll = () => {
+      if (window.scrollY !== 0) window.scrollTo(0, 0);
+    };
+    window.addEventListener("scroll", resetScroll, { passive: true });
+
+    return () => {
+      document.documentElement.style.overflow = htmlPrev;
+      document.body.style.overflow = bodyPrev;
+      window.removeEventListener("scroll", resetScroll);
+    };
+  }, [isMobile]);
+
+  // PWA (standalone) モード対応: キーボード出現時に visual viewport の高さを CSS 変数へ反映。
+  // Safari ブラウザはキーボードでレイアウト viewport を自動縮小するが、
+  // PWA では layout viewport はそのままのため --vvh で補正する。
+  useEffect(() => {
+    if (!isMobile) return;
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const update = () => {
+      document.documentElement.style.setProperty("--vvh", `${vv.height}px`);
+    };
+    update();
+    vv.addEventListener("resize", update);
+    vv.addEventListener("scroll", update);
+    return () => {
+      vv.removeEventListener("resize", update);
+      vv.removeEventListener("scroll", update);
+      document.documentElement.style.removeProperty("--vvh");
+    };
+  }, [isMobile]);
+
+  if (isMobile) {
+    return (
+      <div className={`tree-screen tree-screen--mobile${isKeyboardVisible ? " tree-screen--keyboard" : ""}`}>
+        {toast && <div className="toast toast--mobile">{toast}</div>}
+        <div
+          className="tree-canvas"
+          ref={canvasRef}
+          style={mobileView !== "map" ? { visibility: "hidden", pointerEvents: "none" } : undefined}
+        >
+          <ReactFlow
+            nodes={flowNodes}
+            edges={flowEdges}
+            nodeTypes={nodeTypes}
+            edgeTypes={edgeTypes}
+            fitView
+            fitViewOptions={{ padding: 0.3 }}
+            proOptions={{ hideAttribution: true }}
+            nodesConnectable={false}
+            elementsSelectable={false}
+          >
+            <Background color="#e3e1f2" gap={24} />
+            <Controls showInteractive={false} />
+            <ExportButton
+              ref={exportRef}
+              nodeSizes={nodeSizes}
+              title={diagnosis.title}
+              onExportingChange={setIsExporting}
+              onError={setToast}
+            />
+          </ReactFlow>
+        </div>
+        <aside
+          className="side-panel side-panel--mobile"
+          style={mobileView !== "panel" ? { visibility: "hidden", pointerEvents: "none" } : undefined}
+        >
+          <div className="side-tabs">
+            <button
+              className={`side-tab${tab === "mining" ? " active" : ""}`}
+              onClick={() => setTab("mining")}
+            >
+              ✍️ 自分で書く
+            </button>
+            <button
+              className={`side-tab${tab === "ken" ? " active" : ""}`}
+              onClick={() => setTab("ken")}
+            >
+              💬 Kenと話す
+            </button>
+          </div>
+          <div className="side-body">
+            {tab === "mining" ? (
+              <MiningPanel onTopics={(t) => handleTopics(t, "mining")} />
+            ) : (
+              <KenChatPanel
+                diagnosis={diagnosis}
+                treeNodes={treeNodes}
+                onTopics={(t) => handleTopics(t, "ken_dialogue")}
+              />
+            )}
+          </div>
+          <div className="side-actions">
+            <button className="ghost-button" onClick={reorganizeLayout} disabled={treeNodes.length === 0}>
+              🗺️ 整える
+            </button>
+            <button className="ghost-button" onClick={handleReset}>
+              やり直す
+            </button>
+            <button
+              className="primary-button side-export-button"
+              onClick={() => exportRef.current?.exportImage()}
+              disabled={isExporting}
+            >
+              {isExporting ? "書き出し中…" : "📷 画像を保存"}
+            </button>
+          </div>
+        </aside>
+        <nav className="mobile-bottom-nav">
+          <button
+            className={`mobile-nav-btn${mobileView === "map" ? " active" : ""}`}
+            onClick={() => setMobileView("map")}
+          >
+            <span className="mobile-nav-icon">🗺️</span>
+            <span className="mobile-nav-label">マップ</span>
+          </button>
+          <button
+            className={`mobile-nav-btn${mobileView === "panel" ? " active" : ""}`}
+            onClick={() => setMobileView("panel")}
+          >
+            <span className="mobile-nav-icon">💬</span>
+            <span className="mobile-nav-label">チャット</span>
+          </button>
+        </nav>
+      </div>
+    );
+  }
+
   return (
     <div className="tree-screen" ref={screenRef}>
       <div className="tree-canvas" ref={canvasRef}>
@@ -310,6 +450,58 @@ export default function TreeScreen({ diagnosis }: Props) {
       </aside>
     </div>
   );
+}
+
+function useIsMobile(): boolean {
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768);
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 767px)");
+    const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches);
+    mq.addEventListener("change", handler);
+    return () => mq.removeEventListener("change", handler);
+  }, []);
+  return isMobile;
+}
+
+// focusin ではなく visualViewport のリサイズでキーボード表示を検知する。
+// focusin は自動フォーカス(プログラム的な focus())でも発火するが、
+// visualViewport は実際にキーボードが出た時だけ高さが変化するため誤検知しない。
+function useKeyboardVisible(enabled: boolean): boolean {
+  const [visible, setVisible] = useState(false);
+  useEffect(() => {
+    // enabled が false になった時点でキーボード非表示にリセットする。
+    // リセットしないと、デスクトップ幅に戻った後も visible=true が残り
+    // tree-screen--keyboard クラスが永続してレイアウトが壊れる。
+    if (!enabled) {
+      setVisible(false);
+      return;
+    }
+    const vv = window.visualViewport;
+    if (!vv) return;
+    let maxHeight = vv.height;
+    const handler = () => {
+      if (vv.height > maxHeight) maxHeight = vv.height;
+      // キーボード高さが 150px 超 = キーボード表示中と判定
+      setVisible(maxHeight - vv.height > 150);
+    };
+    // 画面回転時は maxHeight を現在の高さにリセットする。
+    // リセットしないと portrait→landscape 回転後に maxHeight がポートレート高さのまま
+    // 残り、キーボード非表示でも visible=true になり続ける。
+    // rAF を挟むことで回転後の viewport 高さが確定してから更新する。
+    const onOrientationChange = () => {
+      requestAnimationFrame(() => {
+        maxHeight = vv.height;
+        setVisible(false);
+      });
+    };
+    vv.addEventListener("resize", handler);
+    window.addEventListener("orientationchange", onOrientationChange);
+    return () => {
+      vv.removeEventListener("resize", handler);
+      window.removeEventListener("orientationchange", onOrientationChange);
+    };
+  }, [enabled]);
+  return visible;
 }
 
 function buildToast(results: AddResult[]): string {

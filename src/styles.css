@@ -232,6 +232,7 @@ button {
 
 .side-body {
   flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   padding: 16px;
@@ -549,6 +550,12 @@ button {
   z-index: 10;
 }
 
+/* モバイル: トーストをビューポート固定で常に見える位置に表示 */
+.toast--mobile {
+  position: fixed;
+  bottom: 72px; /* ボトムナビ(56px) + 余白 */
+}
+
 /* ---------- side actions bar ---------- */
 .side-actions {
   display: flex;
@@ -584,4 +591,172 @@ button {
 .export-button:disabled {
   background: #c5c2e8;
   cursor: default;
+}
+
+/* ========================================
+   モバイルレスポンシブ (max-width: 767px)
+   ======================================== */
+
+@media (max-width: 767px) {
+  /* ヘッダーコンパクト化 */
+  .app-header { padding: 10px 16px; }
+  .app-tagline { display: none; }
+  .app-logo { font-size: 16px; }
+  .back-button { font-size: 11px; padding: 5px 10px; }
+
+  /* モバイル全画面レイアウト */
+  /* --vvh は visualViewport.height から JS でセット。
+     PWA モードではキーボード出現時もレイアウト viewport が縮小しないため
+     visual viewport 高さで補正する。Safari ブラウザ使用時は通常の 100% と同値になる。 */
+  .tree-screen--mobile {
+    height: calc(var(--vvh, 100%) - 49px);
+    position: relative;
+    overflow: hidden;
+  }
+  .tree-screen--mobile .tree-canvas {
+    position: absolute;
+    inset: 0;
+    bottom: 56px;
+  }
+  .side-panel--mobile {
+    position: absolute;
+    inset: 0;
+    bottom: 56px;
+    width: 100%;
+    z-index: 10;
+  }
+
+  /* side-actionsボタンを折り返し */
+  .side-panel--mobile .side-actions { flex-wrap: wrap; }
+  .side-panel--mobile .side-export-button { width: 100%; }
+
+  /* ボトムナビゲーション */
+  .mobile-bottom-nav {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 56px;
+    display: flex;
+    background: #fff;
+    border-top: 1px solid #ececf4;
+    z-index: 100;
+  }
+  .mobile-nav-btn {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    background: none;
+    border: none;
+    color: var(--text-sub);
+    font-size: 10px;
+    font-weight: 600;
+    padding: 6px;
+    transition: color 0.15s ease;
+    cursor: pointer;
+  }
+  .mobile-nav-btn.active { color: var(--primary); }
+  .mobile-nav-icon { font-size: 20px; line-height: 1; }
+  .mobile-nav-label { line-height: 1; }
+
+  /* セレクト画面 */
+  .diagnosis-grid { grid-template-columns: 1fr; }
+  .select-screen { padding: 24px 16px 80px; }
+
+  /* overflow-y:hidden 単独だと overflow-x が暗黙的に auto になり横スクロールが発生する。
+     overflow:hidden で縦横ともに封じる。縦スクロールは chat-log 自身が担う。 */
+  .side-panel--mobile .side-body { overflow: hidden; }
+
+  /* iOS Safari: input/textarea の font-size が 16px 未満だとフォーカス時に自動ズームが発生する */
+  .side-panel--mobile input,
+  .side-panel--mobile textarea {
+    font-size: 16px;
+  }
+
+  /* ---- モバイル向けチャットUI縮小 ---- */
+
+  /* タブ */
+  .side-panel--mobile .side-tab {
+    padding: 8px 6px;
+    font-size: 12px;
+  }
+
+  /* パネル本体の余白を詰める */
+  .side-panel--mobile .side-body {
+    padding: 10px 12px;
+    line-height: 1.5;
+  }
+
+  /* チャットログ */
+  .side-panel--mobile .chat-log {
+    gap: 6px;
+    padding-bottom: 6px;
+    overflow-x: hidden; /* chat-log も overflow-y:auto の暗黙 overflow-x:auto を封じる */
+  }
+
+  /* チャットバブル */
+  .side-panel--mobile .chat-bubble {
+    font-size: 12px;
+    padding: 7px 10px;
+    line-height: 1.5;
+  }
+
+  /* サジェストボタン */
+  .side-panel--mobile .chat-suggestions {
+    gap: 5px;
+    padding: 5px 0 3px;
+  }
+  .side-panel--mobile .suggestion-button {
+    font-size: 11px;
+    padding: 4px 9px;
+  }
+
+  /* チャット入力欄 */
+  .side-panel--mobile .chat-input-row {
+    gap: 6px;
+    padding-top: 6px;
+  }
+  .side-panel--mobile .chat-input-row input {
+    padding: 7px 12px;
+    font-size: 16px; /* iOS Safari: 16px未満だとフォーカス時に自動ズームが発生する */
+    min-width: 0; /* flex内でブラウザが設定するintrinsic最小幅(プレースホルダー幅)を上書き */
+  }
+  .side-panel--mobile .chat-input-row .primary-button {
+    font-size: 12px;
+    padding: 7px 14px;
+    flex-shrink: 0; /* 送るボタンが圧縮されないよう固定 */
+  }
+
+  /* ツリーを伸ばすボタン */
+  .side-panel--mobile .chat-actions {
+    margin-top: 5px;
+  }
+  .side-panel--mobile .chat-actions .ghost-button {
+    font-size: 11px;
+    padding: 5px 12px;
+  }
+
+  /* 下部アクションバー（整える・やり直す・画像を保存） */
+  .side-panel--mobile .side-actions {
+    padding: 8px 10px;
+    gap: 6px;
+  }
+  .side-panel--mobile .ghost-button {
+    font-size: 11px;
+    padding: 5px 10px;
+  }
+  .side-panel--mobile .primary-button {
+    font-size: 12px;
+    padding: 8px 14px;
+  }
+
+  /* キーボード表示中: 入力に不要な要素を隠しビューポートを最大活用 */
+  .tree-screen--keyboard .mobile-bottom-nav { display: none; }
+  .tree-screen--keyboard .side-panel--mobile { bottom: 0; }
+  .tree-screen--keyboard .tree-canvas { bottom: 0; }
+  .tree-screen--keyboard .side-actions { display: none; }
+  .tree-screen--keyboard .chat-actions { display: none; }
 }
