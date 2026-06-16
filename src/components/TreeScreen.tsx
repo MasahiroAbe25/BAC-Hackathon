@@ -235,13 +235,24 @@ export default function TreeScreen({ diagnosis }: Props) {
     return edges;
   }, [diagnosis, treeNodes]);
 
-  // iOS がフォーカス時にページをスクロールするのを防ぐ（パネルを動かさないため）
+  // iOS がフォーカス時にページをスクロールするのを防ぐ
   useEffect(() => {
     if (!isMobile) return;
-    const prev = document.documentElement.style.overflow;
+    const htmlPrev = document.documentElement.style.overflow;
+    const bodyPrev = document.body.style.overflow;
     document.documentElement.style.overflow = "hidden";
+    document.body.style.overflow = "hidden"; // html だけでは iOS がスクロールするケースがある
+
+    // overflow:hidden をすり抜けたスクロールをその場でリセット
+    const resetScroll = () => {
+      if (window.scrollY !== 0) window.scrollTo(0, 0);
+    };
+    window.addEventListener("scroll", resetScroll, { passive: true });
+
     return () => {
-      document.documentElement.style.overflow = prev;
+      document.documentElement.style.overflow = htmlPrev;
+      document.body.style.overflow = bodyPrev;
+      window.removeEventListener("scroll", resetScroll);
     };
   }, [isMobile]);
 

@@ -37,7 +37,10 @@ export default function KenChatPanel({ diagnosis, treeNodes, onTopics }: Props) 
   }, [messages, busy]);
 
   useEffect(() => {
-    if (!busy) {
+    // モバイルでは自動フォーカスしない。
+    // focus() がプログラム的に呼ばれると iOS が入力欄を表示するためにページをスクロールし
+    // チャット欄全体が上に押し上げられる原因になる。
+    if (!busy && window.innerWidth >= 768) {
       inputRef.current?.focus();
     }
   }, [busy]);
