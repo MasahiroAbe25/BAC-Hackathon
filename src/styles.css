@@ -663,8 +663,9 @@ button {
   .diagnosis-grid { grid-template-columns: 1fr; }
   .select-screen { padding: 24px 16px 80px; }
 
-  /* side-body は常に overflow:hidden にして iOS の内部スクロールを防止 */
-  .side-panel--mobile .side-body { overflow-y: hidden; }
+  /* overflow-y:hidden 単独だと overflow-x が暗黙的に auto になり横スクロールが発生する。
+     overflow:hidden で縦横ともに封じる。縦スクロールは chat-log 自身が担う。 */
+  .side-panel--mobile .side-body { overflow: hidden; }
 
   /* iOS Safari: input/textarea の font-size が 16px 未満だとフォーカス時に自動ズームが発生する */
   .side-panel--mobile input,
@@ -690,6 +691,7 @@ button {
   .side-panel--mobile .chat-log {
     gap: 6px;
     padding-bottom: 6px;
+    overflow-x: hidden; /* chat-log も overflow-y:auto の暗黙 overflow-x:auto を封じる */
   }
 
   /* チャットバブル */
