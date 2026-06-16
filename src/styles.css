@@ -666,6 +666,12 @@ button {
   /* side-body は常に overflow:hidden にして iOS の内部スクロールを防止 */
   .side-panel--mobile .side-body { overflow-y: hidden; }
 
+  /* iOS Safari: input/textarea の font-size が 16px 未満だとフォーカス時に自動ズームが発生する */
+  .side-panel--mobile input,
+  .side-panel--mobile textarea {
+    font-size: 16px;
+  }
+
   /* ---- モバイル向けチャットUI縮小 ---- */
 
   /* タブ */
@@ -710,7 +716,7 @@ button {
   }
   .side-panel--mobile .chat-input-row input {
     padding: 7px 12px;
-    font-size: 12px;
+    font-size: 16px; /* iOS Safari: 16px未満だとフォーカス時に自動ズームが発生する */
   }
   .side-panel--mobile .chat-input-row .primary-button {
     font-size: 12px;
