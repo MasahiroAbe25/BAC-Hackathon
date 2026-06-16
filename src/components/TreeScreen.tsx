@@ -432,28 +432,23 @@ function useIsMobile(): boolean {
   return isMobile;
 }
 
+// focusin ではなく visualViewport のリサイズでキーボード表示を検知する。
+// focusin は自動フォーカス(プログラム的な focus())でも発火するが、
+// visualViewport は実際にキーボードが出た時だけ高さが変化するため誤検知しない。
 function useKeyboardVisible(enabled: boolean): boolean {
   const [visible, setVisible] = useState(false);
   useEffect(() => {
     if (!enabled) return;
-    let timer: ReturnType<typeof setTimeout>;
-    const show = (e: FocusEvent) => {
-      const t = e.target as Element;
-      if (t.tagName === "INPUT" || t.tagName === "TEXTAREA") {
-        clearTimeout(timer);
-        setVisible(true);
-      }
+    const vv = window.visualViewport;
+    if (!vv) return;
+    let maxHeight = vv.height;
+    const handler = () => {
+      if (vv.height > maxHeight) maxHeight = vv.height;
+      // キーボード高さが 150px 超 = キーボード表示中と判定
+      setVisible(maxHeight - vv.height > 150);
     };
-    const hide = () => {
-      timer = setTimeout(() => setVisible(false), 150);
-    };
-    document.addEventListener("focusin", show);
-    document.addEventListener("focusout", hide);
-    return () => {
-      document.removeEventListener("focusin", show);
-      document.removeEventListener("focusout", hide);
-      clearTimeout(timer);
-    };
+    vv.addEventListener("resize", handler);
+    return () => vv.removeEventListener("resize", handler);
   }, [enabled]);
   return visible;
 }
