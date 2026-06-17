@@ -47,6 +47,31 @@ GEMINI_MODEL=gemini-2.5-flash,gemini-2.0-flash,gemini-2.0-flash-lite
 
 ---
 
+## スマホ対応
+
+iOS Safari / PWA（ホーム画面追加）での利用を想定した対応を実施済みです。
+
+### レイアウト
+
+- 768px 以下をモバイルと判定し、画面下部のボトムナビゲーションで「マップ」「チャット」を切り替え
+- `display: none` でコンポーネントを隠すことで、React Flow の状態とチャット履歴をアンマウントせずに保持
+- iOS Safari のフォーカス時自動ズーム（font-size < 16px 起因）を `touch-action` と viewport 設定で抑止
+
+### キーボード対応
+
+- Safari ブラウザ: キーボード表示時にレイアウトビューポートが縮小するため、チャット入力欄が自然にキーボード上に浮上
+- PWA（スタンドアロン）モード: ブラウザと異なりレイアウトビューポートが縮小しない。`window.visualViewport.height` を監視し、`--vvh` CSS 変数に反映することでチャット入力欄が常にキーボード上に収まるよう制御
+
+### 画像書き出し（iOS 最適化）
+
+| 問題 | 原因 | 対応 |
+|---|---|---|
+| エッジが保存画像に出ない | iOS Safari の foreignObject 内で SVG `overflow: visible` が無視される WebKit バグ | エッジを SVG から除外し、Canvas 2D API で直接描画 |
+| テキストが折り返される | iOS Safari の foreignObject は Google Fonts(@font-face) を適用しない制約があり、システムフォントにフォールバックして文字幅が変わる | エクスポート時にシステムフォント(`Hiragino Maru Gothic ProN` 等)を `!important` で強制適用し、フォント適用後のノードサイズを再計測してエッジ端点を算出 |
+| ファイル名が文字化け / ファイルアプリに保存される | `<a download>` + Data URL では日本語ファイル名が URL エンコードされ、保存先も Files アプリになる | **Web Share API**（iOS 15+ 対応）を優先使用。シェアシートから「写真に保存」で写真アプリへ直接保存可能。非対応環境は Blob URL ダウンロードにフォールバック |
+
+---
+
 ## デモフロー
 
 1. **診断選択** — 18種の就活占い診断から自分の結果に近いものを1つ選ぶ
