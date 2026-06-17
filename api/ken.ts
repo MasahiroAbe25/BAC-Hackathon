@@ -33,9 +33,9 @@ async function tryWithModels(
       body: JSON.stringify({ model, max_tokens: maxTokens, messages }),
     });
     if (r.ok) return r.json();
-    // 認証エラー・不正リクエストはキーまたはモデル名が無効なので即停止
-    if (r.status === 400 || r.status === 401 || r.status === 403) return null;
-    // 429・5xx は次のモデルへ
+    // 認証エラーはキーが無効なので即停止
+    if (r.status === 401 || r.status === 403) return null;
+    // 400(モデル名不正など)・429・5xx は次のモデルへ
   }
   return null;
 }

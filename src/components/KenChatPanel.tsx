@@ -139,7 +139,7 @@ export default function KenChatPanel({ diagnosis, treeNodes, onTopics }: Props) 
       </div>
       {usingMock && (
         <div className="status-note">
-          ※ いまはデモモードだよ(OPENROUTER_API_KEYを設定すると本物のKenと話せます)
+          ※ いまはデモモードだよ(APIキーを設定すると本物のKenと話せます)
         </div>
       )}
     </div>

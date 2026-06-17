@@ -143,7 +143,7 @@ function parseTopics(text: string): TopicInput[] {
           Array.isArray((topic as TopicInput).tags)
       )
       .map((topic: TopicInput) => ({
-        label: topic.label.slice(0, 20),
+        label: topic.label.slice(0, 14),
         tags: topic.tags.filter((tag) => typeof tag === "string"),
       }));
   } catch {
